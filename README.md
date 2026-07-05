@@ -2,6 +2,18 @@
 
 Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `index.html`, no build step, no server, no auth. All data lives in your browser's localStorage; use **Export/Import** for backups or moving between machines.
 
+## Themes
+
+VialHunter ships with a **light / dark toggle** in the header corner. Dark is **Graphite & Gold** (cool graphite surfaces, brand-gold accent, mint "best price" flag); light is **Warm Paper** (espresso ink on cream, burnt-orange accent, deep-green "best price" flag). Your choice is remembered per browser.
+
+**Dark — Graphite & Gold**
+
+![VialHunter in dark mode — Graphite & Gold theme](assets/vialhunter-dark.png)
+
+**Light — Warm Paper**
+
+![VialHunter in light mode — Warm Paper theme](assets/vialhunter-light.png)
+
 ## Features
 
 - **Vendors**: add/remove freely (nothing hard-coded). Drag a contact photo or `.vcf` card onto a vendor. Company + employee WhatsApp numbers render as clickable `wa.me` links.
@@ -10,21 +22,6 @@ Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `inde
 - **Search**: type a peptide; every warehouse stocking it appears, lowest price flagged BEST.
 - **Cart optimizer**: finds the cheapest purchase plan, splitting across warehouses while accounting for shipping, free-ship thresholds, and minimum orders. Also shows "buy everything from one vendor" totals. Generates a WhatsApp order message per vendor with a one-click Copy + Open WhatsApp button.
 
-## Deploy
-
-### Cloudflare Pages
-1. Push this folder to a Git repo (or use Direct Upload).
-2. Cloudflare dashboard → Workers & Pages → Create → Pages → connect repo.
-3. Build command: *(none)*. Output directory: `/`. Done.
-
-### GitHub Pages
-1. Push to a repo, Settings → Pages → Deploy from branch → `main` / root.
-
-### Docker / any Linux box
-```bash
-docker run -d -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
-```
-Or simply: `python3 -m http.server 8080`
 
 ## CSV format
 
@@ -34,3 +31,4 @@ Header row with `Code, Name, Specification, Price` columns (order/extra columns 
 
 - API key is never included in Export backups.
 - Data is per-browser. To share a dataset with someone, send them your Export JSON.
+- Sample vendor/contact numbers in the demo use the reserved `555 01xx` fictional range — they are placeholders, not real WhatsApp lines.
