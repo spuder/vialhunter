@@ -998,9 +998,25 @@ $('#settingsBtn').onclick = ()=>{ $('#setKey').value=db.settings.apiKey||''; $('
 $('#setCancel').onclick = ()=>$('#setOverlay').classList.remove('open');
 $('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; save(); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
 
+/* Backups are built ALLOWLIST-style: only vendors/warehouses/cart/model are ever
+   serialized, so the API key (or any future secret in settings) cannot leak into a
+   shared JSON file. A final tripwire scan refuses to export if the key string
+   somehow appears anywhere in the payload (e.g. pasted into a vendor field). */
+function exportPayload(){
+  const clean = {
+    app: 'vialhunter', exported: new Date().toISOString(),
+    vendors: db.vendors, warehouses: db.warehouses, cart: db.cart,
+    settings: { model: (db.settings && db.settings.model) || 'claude-sonnet-5' }
+  };
+  const json = JSON.stringify(clean, null, 2);
+  const key = db.settings && db.settings.apiKey;
+  if(key && key.length>4 && json.includes(key)) return null; // tripwire
+  return json;
+}
 $('#exportBtn').onclick = ()=>{
-  const clean = JSON.parse(JSON.stringify(db)); clean.settings = {model:db.settings.model}; // never export API key
-  const blob = new Blob([JSON.stringify(clean,null,2)], {type:'application/json'});
+  const json = exportPayload();
+  if(json===null){ toast('⚠ Export blocked: your API key appears inside the data. Remove it from whatever field it was pasted into.'); return; }
+  const blob = new Blob([json], {type:'application/json'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download = 'vialhunter-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 };
@@ -1010,6 +1026,7 @@ $('#importFile').onchange = e=>{
   f.text().then(t=>{
     try{ const d = JSON.parse(t);
       if(!d.vendors || !d.warehouses) throw new Error('not a backup file');
+      if(d.settings) delete d.settings.apiKey; // never accept a key from a shared file
       const key = db.settings.apiKey;
       db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[];
       save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
