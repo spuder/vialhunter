@@ -723,6 +723,17 @@ function specNorm(spec){
   return s.replace(/[^a-z0-9]/g,'');
 }
 function looksLikeCode(n){ const s=String(n||'').trim(); return s.length>0 && s.length<=8 && !/\s/.test(s) && /\d/.test(s) && /^[A-Za-z0-9\-+]+$/.test(s); }
+function trailingNum(c){ const m = codeNorm(c).match(/(\d+(?:\.\d+)?)$/); return m ? parseFloat(m[1]) : null; }
+function specFromCode(c){ const n = trailingNum(c); return n!=null ? n+'mg' : ''; } // BC5 -> "5mg" (vendors embed the dose in the code)
+/* A NAME may stand in for a missing code (sloppy CSVs list "RT10" as the name)
+   only when the item has no real code AND the trailing number is dose-sized.
+   Compound names like BPC-157 / TB-500 / CJC-1295 end in big compound numbers,
+   not doses — treating those as codes merged every dose into one product. */
+function nameAsCode(it){
+  if(it.code || !looksLikeCode(it.name)) return null;
+  const n = trailingNum(it.name);
+  return (n!=null && n<=99) ? codeNorm(it.name) : null;
+}
 function nameScore(it){ const n=String(it.name||''); return (looksLikeCode(n)?0:100) + n.length + (String(it.spec||'').trim()?5:0); }
 
 function buildCatalog(){
@@ -733,9 +744,17 @@ function buildCatalog(){
   const union = (a,b)=>{ parent[find(a)] = find(b); };
   const keyMap = new Map();
   items.forEach((it,i)=>{
-    const keys = ['n:'+nameNorm(it.name)+'|'+specNorm(it.spec)];
+    const keys = [];
+    // Dose comes from the spec, or failing that from the code's trailing number
+    // (BC5 -> 5mg). An item with NO resolvable dose must never share a name key,
+    // otherwise "BPC 157" BC5/BC10/BC20 (all with empty specs) collapse into one
+    // product. Name-only matching is allowed only for items with no code at all.
+    const nc = nameAsCode(it);
+    const dose = specNorm(it.spec) || specFromCode(it.code || nc || '');
+    if(dose) keys.push('n:'+nameNorm(it.name)+'|'+dose);
+    else if(!it.code && !nc) keys.push('n:'+nameNorm(it.name)+'|');
     if(it.code) keys.push('c:'+codeNorm(it.code));
-    if(looksLikeCode(it.name)) keys.push('c:'+codeNorm(it.name));
+    if(nc) keys.push('c:'+nc);
     for(const k of keys){ if(keyMap.has(k)) union(i, keyMap.get(k)); else keyMap.set(k, i); }
   });
   const groups = new Map();
