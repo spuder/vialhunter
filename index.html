@@ -49,8 +49,14 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .vphone a{font-size:14px}
 .wa{display:inline-flex;align-items:center;gap:5px;color:#25d366 !important;font-weight:600}
 .wa:hover{text-decoration:underline}
-.contactrow{display:flex;justify-content:space-between;font-size:14px;padding:3px 0;border-top:1px solid var(--border)}
+.contactrow{display:flex;justify-content:space-between;align-items:center;font-size:14px;padding:4px 0;border-top:1px solid var(--border)}
 .contactrow:first-of-type{border-top:none}
+.contactrow .who{display:flex;align-items:center;gap:8px}
+.cphoto{width:30px;height:30px;border-radius:50%;background:var(--panel2);border:1px dashed var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--muted);cursor:pointer;flex-shrink:0}
+.cphoto img{width:100%;height:100%;object-fit:cover}
+.cphoto.dragover{border-color:var(--accent)}
+.vmcontact{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.vmcontact input{flex:1;min-width:0}
 .whrow{display:flex;justify-content:space-between;align-items:center;background:var(--panel2);border-radius:8px;padding:6px 10px;font-size:13px;margin-bottom:6px}
 .whrow .meta{color:var(--muted)}
 .vfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
@@ -184,8 +190,9 @@ tr.gchild td:first-child{padding-left:32px}
     </div>
   </div>
   <div class="frow"><div>
-    <label>Employees / contacts — one per line: <code>Name, +phone</code></label>
-    <textarea id="vmContacts" rows="3" placeholder="Bob, +1 555 555 5501&#10;Steve, +1 555 555 5502"></textarea>
+    <label>Employees / contacts — each can have their own photo</label>
+    <div id="vmContactList"></div>
+    <button class="small" id="vmAddContact" type="button">＋ Add employee</button>
   </div></div>
   <input type="file" id="vmPhotoFile" accept="image/*" style="display:none">
   <div class="mfoot">
@@ -281,7 +288,31 @@ function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'
 function vendorOf(wh){ return db.vendors.find(v=>v.id===wh.vendorId); }
 
 /* ============ vendors ============ */
-let editingVendorId = null, vmPhotoData = null;
+let editingVendorId = null, vmPhotoData = null, vmContacts = [];
+
+function renderVmContacts(){
+  const box = $('#vmContactList');
+  box.innerHTML = '';
+  vmContacts.forEach((c,i)=>{
+    const row = document.createElement('div');
+    row.className = 'vmcontact';
+    row.innerHTML = `<div class="cphoto" title="Drop or click to set photo">${c.photo?`<img src="${c.photo}">`:'📷'}</div>
+      <input placeholder="Name" value="${esc(c.name||'')}" data-cf="name">
+      <input placeholder="+1 555 555 5555" value="${esc(c.phone||'')}" data-cf="phone" style="max-width:180px">
+      <button class="small danger" type="button" title="Remove">✕</button>`;
+    const ph = row.querySelector('.cphoto');
+    ph.onclick = ()=>{ const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+      inp.onchange=()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ c.photo=d; renderVmContacts(); }); }; inp.click(); };
+    ph.addEventListener('dragover', e=>{e.preventDefault(); ph.classList.add('dragover');});
+    ph.addEventListener('dragleave', ()=>ph.classList.remove('dragover'));
+    ph.addEventListener('drop', e=>{ e.preventDefault(); ph.classList.remove('dragover');
+      const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('image/')) readImage(f, d=>{ c.photo=d; renderVmContacts(); }); });
+    row.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{ c[inp.dataset.cf]=inp.value; });
+    row.querySelector('button').onclick = ()=>{ vmContacts.splice(i,1); renderVmContacts(); };
+    box.appendChild(row);
+  });
+}
+$('#vmAddContact').onclick = ()=>{ vmContacts.push({name:'', phone:'', photo:null}); renderVmContacts(); };
 
 function renderVendors(){
   const g = $('#vendorGrid');
@@ -299,7 +330,7 @@ function renderVendors(){
           ${v.site?`<a href="${/^https?:/.test(v.site)?esc(v.site):'https://'+esc(v.site)}" target="_blank" style="font-size:13px">${esc(v.site)}</a>`:''}
         </div>
       </div>
-      <div>${(v.contacts||[]).map(c=>`<div class="contactrow"><span>${esc(c.name)}</span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
+      <div>${(v.contacts||[]).map((c,ci)=>`<div class="contactrow"><span class="who"><span class="cphoto" data-cph="${v.id}:${ci}" title="Click to set this person's photo">${c.photo?`<img src="${c.photo}">`:'👤'}</span>${esc(c.name)}</span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
       <div>${whs.map(w=>`<div class="whrow"><span>🏭 ${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
         <span><button class="small" data-editwh="${w.id}">Edit</button> <button class="small danger" data-delwh="${w.id}">✕</button></span></div>`).join('')}</div>
       <div class="vfoot">
@@ -349,6 +380,17 @@ function renderVendors(){
     inp.onchange=()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ v.photo=d; save(); renderVendors(); }); };
     inp.click();
   });
+  g.querySelectorAll('[data-cph]').forEach(el=>{
+    const [vid, ci] = el.dataset.cph.split(':');
+    const setPhoto = f => readImage(f, d=>{ db.vendors.find(x=>x.id===vid).contacts[+ci].photo = d; save(); renderVendors(); });
+    el.onclick = e=>{ e.stopPropagation();
+      const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+      inp.onchange=()=>{ if(inp.files[0]) setPhoto(inp.files[0]); }; inp.click(); };
+    el.addEventListener('dragover', e=>{e.preventDefault(); e.stopPropagation(); el.classList.add('dragover');});
+    el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
+    el.addEventListener('drop', e=>{ e.preventDefault(); e.stopPropagation(); el.classList.remove('dragover');
+      const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('image/')) setPhoto(f); });
+  });
 }
 
 function applyVcard(obj, text){
@@ -381,7 +423,8 @@ function openVendorModal(id){
   $('#vmTitle').textContent = v ? 'Edit vendor' : 'Add vendor';
   $('#vmName').value = v?v.name:''; $('#vmPhone').value = v?v.phone||'':'';
   $('#vmSite').value = v?v.site||'':'';
-  $('#vmContacts').value = v?(v.contacts||[]).map(c=>c.name+(c.phone?', '+c.phone:'')).join('\n'):'';
+  vmContacts = v ? JSON.parse(JSON.stringify(v.contacts||[])) : [];
+  renderVmContacts();
   $('#vmPhoto').innerHTML = v&&v.photo ? `<img src="${v.photo}">` : '<span>📷</span>';
   if(v&&v.photo) vmPhotoData = v.photo;
   $('#vendorOverlay').classList.add('open');
@@ -389,9 +432,9 @@ function openVendorModal(id){
 $('#vmCancel').onclick = ()=>$('#vendorOverlay').classList.remove('open');
 $('#vmSave').onclick = ()=>{
   const name = $('#vmName').value.trim(); if(!name){ toast('Company name required'); return; }
-  const contacts = $('#vmContacts').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
-    const i = l.lastIndexOf(','); return i<0 ? {name:l, phone:''} : {name:l.slice(0,i).trim(), phone:l.slice(i+1).trim()};
-  });
+  const contacts = vmContacts
+    .map(c=>({name:(c.name||'').trim(), phone:(c.phone||'').trim(), photo:c.photo||null}))
+    .filter(c=>c.name||c.phone);
   const data = {name, phone:$('#vmPhone').value.trim(), site:$('#vmSite').value.trim(), contacts, photo:vmPhotoData};
   if(editingVendorId){ Object.assign(db.vendors.find(v=>v.id===editingVendorId), data); }
   else db.vendors.push(Object.assign({id:uid()}, data));
