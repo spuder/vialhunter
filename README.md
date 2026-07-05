@@ -2,9 +2,10 @@
 
 Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `index.html`, no build step, no server, no auth. All data lives in your browser's localStorage; use **Export/Import** for backups or moving between machines.
 
-## Themes
+## Site
 
-VialHunter ships with a **light / dark toggle** in the header corner. Dark is **Graphite & Gold** (cool graphite surfaces, brand-gold accent, mint "best price" flag); light is **Warm Paper** (espresso ink on cream, burnt-orange accent, deep-green "best price" flag). Your choice is remembered per browser.
+[https://spuder.github.io/vialhunter/](https://spuder.github.io/vialhunter/)
+
 
 **Dark — Graphite & Gold**
 
