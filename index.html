@@ -177,9 +177,9 @@ tr.gchild td:first-child{padding-left:32px}
   </div>
   <div id="dropZone">
     <div class="big">⇩</div>
-    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), or PDF — or click to browse</div>
-    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs are extracted with Claude AI — add your API key in ⚙ Settings.</div>
-    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.pdf" style="display:none">
+    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), PDF, or a photo/screenshot (JPG, PNG) — or click to browse</div>
+    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs and images are extracted with Claude AI — add your API key in ⚙ Settings.</div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png,.webp,.gif" style="display:none">
   </div>
 
   <h2 id="resultsTitle">All products</h2>
@@ -528,8 +528,10 @@ function handleFile(file){
       gridToReview(grid, file.name); };
     r.readAsArrayBuffer(file);
   } else if(ext==='pdf'){
-    extractPdf(file);
-  } else toastErr('Unsupported file type: .'+ext+' — drop a CSV, XLSX, or PDF');
+    extractMedia(file, 'application/pdf');
+  } else if(['jpg','jpeg','png','webp','gif'].includes(ext)){
+    extractMedia(file, {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif'}[ext]);
+  } else toastErr('Unsupported file type: .'+ext+' — drop a CSV, XLSX, PDF, or an image (JPG/PNG)');
 }
 
 function parseNum(v){
@@ -650,12 +652,15 @@ function currentTargetWh(){
 }
 
 /* ============ PDF via Claude API ============ */
-async function extractPdf(file){
+async function extractMedia(file, mediaType){
   const key = db.settings.apiKey;
-  if(!key){ toastErr('PDF extraction needs a Claude API key — add one in ⚙ Settings'); $('#setOverlay').classList.add('open'); return; }
-  dz.innerHTML = '<div><span class="spin"></span>Extracting prices from PDF with Claude…</div>';
+  if(!key){ toastErr('PDF/image extraction needs a Claude API key — add one in ⚙ Settings'); $('#setOverlay').classList.add('open'); return; }
+  dz.innerHTML = '<div><span class="spin"></span>Extracting prices from '+esc(file.name)+' with Claude…</div>';
   try{
     const b64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
+    const mediaBlock = mediaType==='application/pdf'
+      ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64}}
+      : {type:'image', source:{type:'base64', media_type:mediaType, data:b64}};
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
       headers:{
@@ -668,7 +673,7 @@ async function extractPdf(file){
         model: db.settings.model || 'claude-sonnet-5',
         max_tokens: 32000,
         messages:[{role:'user', content:[
-          {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64}},
+          mediaBlock,
           {type:'text', text:'This is a vendor price list (mostly research peptides). Extract every product/price row. Respond with ONLY a MINIFIED JSON object on a single line — no markdown fences, no whitespace, no commentary — shaped as: {"shipping":number|null,"minOrder":number|null,"items":[{"code":string,"name":string,"spec":string,"price":number}]}. "spec" is the size/dose like "5mg" or "10mg x 10 vials". Use null when a value is absent. Prices as plain numbers without currency symbols.'}
         ]}]
       })
@@ -694,20 +699,20 @@ async function extractPdf(file){
       if(!parsed) throw new Error('Could not parse the model\'s reply ('+e.message+'). It began: “'+text.slice(0,160)+'…”');
     }
     const items = (parsed.items||[]).map(it=>({code:it.code||'', name:it.name||'', spec:it.spec||'', price:parseNum(it.price)})).filter(it=>it.name&&it.price!=null);
-    if(!items.length) throw new Error('The model found no product/price rows in this PDF');
+    if(!items.length) throw new Error('The model found no product/price rows in '+file.name);
     if(truncated) toastErr('⚠ The reply was cut off — recovered '+items.length+' items, but the END of the price list may be missing. Double-check the bottom of the review table against the PDF.');
     openReview({items, shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null}, file.name);
   }catch(err){
-    console.error('PDF extraction error:', err);
-    toastErr('PDF extraction failed — '+err.message);
+    console.error('Extraction error:', err);
+    toastErr('Extraction failed — '+err.message);
   }finally{
     resetDropZone();
   }
 }
 function resetDropZone(){
   dz.innerHTML = `<div class="big">⇩</div>
-    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), or PDF — or click to browse</div>
-    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs are extracted with Claude AI — add your API key in ⚙ Settings.</div>`;
+    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), PDF, or a photo/screenshot (JPG, PNG) — or click to browse</div>
+    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs and images are extracted with Claude AI — add your API key in ⚙ Settings.</div>`;
 }
 
 /* ============ search / catalog ============ */
