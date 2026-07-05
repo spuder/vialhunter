@@ -958,6 +958,7 @@ function renderCart(){
   const body = $('#cartBody');
   if(!db.cart.length){ body.innerHTML = '<div class="empty">Cart is empty — search a peptide and click “Add to cart”.</div>'; return; }
   const {best, singles, cart} = optimize();
+  let estTotal = 0;
   let html = cart.map((c,i)=>{
     let pinNote = '';
     if(c.whId){
@@ -965,13 +966,18 @@ function renderCart(){
       const v = w && vendorOf(w);
       pinNote = w ? `<div style="font-size:12px;color:var(--accent2)">📌 pinned to ${esc(v?v.name:'?')} · ${esc(w.name)} <button class="small" data-unpin="${i}" style="font-size:11px;padding:1px 7px">Unpin</button></div>` : '';
     }
+    const unit = c.offers.length ? Math.min(...c.offers.map(o=>o.price)) : null;
+    if(unit!=null) estTotal += unit*c.qty;
     return `
     <div class="cartitem">
       <div class="n"><strong>${esc(c.name)}</strong> <span class="prodspec">${esc(c.spec)}</span>
         ${!c.offers.length?'<span style="color:var(--danger);font-size:12px"> — no vendor stocks this</span>':''}${pinNote}</div>
+      ${unit!=null?`<div style="text-align:right;min-width:86px"><strong>${money(unit*c.qty)}</strong>${c.qty>1?`<div class="hint" style="font-size:11px">${money(unit)} each</div>`:''}</div>`:'<div style="min-width:86px"></div>'}
       <input type="number" min="1" value="${c.qty}" data-qty="${i}">
       <button class="small danger" data-rm="${i}">✕</button>
     </div>`;}).join('');
+  const nItems = cart.reduce((s,c)=>s+c.qty,0);
+  html += `<div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 46px 0 0;font-size:14px"><span class="hint">${nItems} item${nItems===1?'':'s'}, estimated:</span> <strong>${money(estTotal)}</strong> <span class="hint">+ shipping — see plan below</span></div>`;
 
   const sel = selectedPlanWh ? singles.find(s=>s.wh.id===selectedPlanWh && s.covered>0) : null;
   const plan = sel || best;
