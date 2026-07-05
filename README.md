@@ -2,9 +2,8 @@
 
 Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `index.html`, no build step, no server, no auth. All data lives in your browser's localStorage; use **Export/Import** for backups or moving between machines.
 
-## Site
 
-[https://spuder.github.io/vialhunter/](https://spuder.github.io/vialhunter/)
+# [https://spuder.github.io/vialhunter/](https://spuder.github.io/vialhunter/)
 
 
 **Dark — Graphite & Gold**
