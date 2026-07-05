@@ -76,11 +76,9 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .addcard .big{font-size:30px}
 
 /* dropzone */
-#dropZone{border:2px dashed var(--border);border-radius:16px;background:var(--panel);padding:40px 20px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
-#dropZone.dragover{border-color:var(--accent);background:var(--panel2);color:var(--text)}
-#dropZone .big{font-size:36px;margin-bottom:8px}
-.uprow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
-.uprow label{font-size:13px;color:var(--muted)}
+.whrow.dragover{outline:2px dashed var(--accent);outline-offset:1px;background:rgba(249,115,22,.08)}
+.newwh{border:1.5px dashed var(--border);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--muted);text-align:center;cursor:pointer;margin-top:2px;transition:.12s}
+.newwh:hover,.newwh.dragover{border-color:var(--accent);color:var(--text);background:rgba(249,115,22,.06)}
 
 /* results */
 table{width:100%;border-collapse:collapse}
@@ -167,20 +165,8 @@ tr.gchild td:first-child{padding-left:32px}
 <main>
 
   <h2>Vendors</h2>
+  <div class="hint" style="margin-bottom:10px">Drop a price list — CSV, Excel, PDF, or a photo/screenshot — onto any warehouse row, or onto a vendor's “new warehouse” box below it. CSV/Excel parse locally; PDFs &amp; images are extracted with Claude AI (add your API key in ⚙ Settings).</div>
   <div id="vendorGrid"></div>
-
-  <h2>Upload price list</h2>
-  <div class="uprow">
-    <div><label>Vendor</label><br><select id="upVendor"></select></div>
-    <div><label>Warehouse</label><br><select id="upWarehouse"></select></div>
-    <div id="upNewWhWrap" style="display:none"><label>New warehouse name</label><br><input id="upNewWh" placeholder="Warehouse 1"></div>
-  </div>
-  <div id="dropZone">
-    <div class="big">⇩</div>
-    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), PDF, or a photo/screenshot (JPG, PNG) — or click to browse</div>
-    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs and images are extracted with Claude AI — add your API key in ⚙ Settings.</div>
-    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png,.webp,.gif" style="display:none">
-  </div>
 
   <h2 id="resultsTitle">All products</h2>
   <div id="results"></div>
@@ -235,6 +221,7 @@ tr.gchild td:first-child{padding-left:32px}
 <div class="overlay" id="reviewOverlay"><div class="modal wide">
   <h3>Review extracted items <span class="hint" id="reviewMeta"></span></h3>
   <div class="frow">
+    <div><label>Vendor · Warehouse</label><input id="rvWhName" placeholder="Warehouse 1"></div>
     <div><label>Shipping cost ($)</label><input id="rvShip" type="number" step="0.01"></div>
     <div><label>Free ship over ($)</label><input id="rvFree" type="number" step="0.01"></div>
     <div><label>Minimum order ($)</label><input id="rvMin" type="number" step="0.01"></div>
@@ -297,15 +284,16 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;
 function money(n){ return '$' + (+n).toFixed(2).replace(/\.00$/,''); }
 function digits(p){ return String(p||'').replace(/[^0-9]/g,''); }
 function waLink(p, text){ const d = digits(p); if(!d) return null; return 'https://wa.me/'+d+(text?'?text='+encodeURIComponent(text):''); }
-function toast(m, sticky){
+function toast(m, sticky, isErr){
   const t=$('#toast');
-  t.classList.toggle('err', !!sticky);
+  t.classList.toggle('err', !!isErr);
   t.innerHTML = `<span>${esc(m)}</span>` + (sticky ? `<button class="small" onclick="this.parentNode.style.display='none'" style="margin-left:12px;flex-shrink:0">✕ Dismiss</button>` : '');
   t.style.display='flex';
   clearTimeout(t._h);
   if(!sticky) t._h=setTimeout(()=>t.style.display='none',2600); // errors stay until dismissed
 }
-function toastErr(m){ toast(m, true); }
+function toastErr(m){ toast(m, true, true); }
+function toastHide(){ const t=$('#toast'); clearTimeout(t._h); t.style.display='none'; }
 function vendorOf(wh){ return db.vendors.find(v=>v.id===wh.vendorId); }
 
 /* ============ vendors ============ */
@@ -352,8 +340,9 @@ function renderVendors(){
         </div>
       </div>
       <div>${(v.contacts||[]).map((c,ci)=>`<div class="contactrow"><span class="who"><span class="cphoto" data-cph="${v.id}:${ci}" title="Click to set this person's photo">${c.photo?`<img src="${c.photo}">`:'👤'}</span>${esc(c.name)}</span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
-      <div>${whs.map(w=>`<div class="whrow"><span>🏭 ${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
-        <span><button class="small" data-editwh="${w.id}">Edit</button> <button class="small danger" data-delwh="${w.id}">✕</button></span></div>`).join('')}</div>
+      <div>${whs.map(w=>`<div class="whrow" data-whdrop="${w.id}" title="Drop a price list (CSV/XLSX/PDF/image) here to update ${esc(w.name)}"><span>🏭 ${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
+        <span><button class="small" data-upwh="${w.id}" title="Upload a price list to this warehouse">⇩ Upload</button> <button class="small" data-editwh="${w.id}">Edit</button> <button class="small danger" data-delwh="${w.id}">✕</button></span></div>`).join('')}
+      <div class="newwh" data-newwh="${v.id}" title="Creates a new warehouse for ${esc(v.name)} from the dropped file">⇩ New warehouse — drop a price list or click</div></div>
       <div class="vfoot">
         <button class="small" data-addwh="${v.id}">+ Warehouse</button>
         <button class="small" data-editv="${v.id}">Edit</button>
@@ -400,6 +389,20 @@ function renderVendors(){
     const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
     inp.onchange=()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ v.photo=d; save(); renderVendors(); }); };
     inp.click();
+  });
+  g.querySelectorAll('[data-upwh]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); pickFile({whId:b.dataset.upwh}); });
+  g.querySelectorAll('[data-whdrop]').forEach(el=>{
+    el.addEventListener('dragover', e=>{e.preventDefault(); e.stopPropagation(); el.classList.add('dragover');});
+    el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
+    el.addEventListener('drop', e=>{ e.preventDefault(); e.stopPropagation(); el.classList.remove('dragover');
+      if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0], {whId:el.dataset.whdrop}); });
+  });
+  g.querySelectorAll('[data-newwh]').forEach(el=>{
+    el.onclick = ()=>pickFile({vendorId:el.dataset.newwh});
+    el.addEventListener('dragover', e=>{e.preventDefault(); e.stopPropagation(); el.classList.add('dragover');});
+    el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
+    el.addEventListener('drop', e=>{ e.preventDefault(); e.stopPropagation(); el.classList.remove('dragover');
+      if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0], {vendorId:el.dataset.newwh}); });
   });
   g.querySelectorAll('[data-cph]').forEach(el=>{
     const [vid, ci] = el.dataset.cph.split(':');
@@ -494,44 +497,36 @@ $('#whSave').onclick = ()=>{
   save(); $('#whOverlay').classList.remove('open'); renderAll();
 };
 
-/* ============ upload / parsing ============ */
-function refreshUploadSelects(){
-  const vs = $('#upVendor'), ws = $('#upWarehouse');
-  vs.innerHTML = db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('') || '<option value="">— add a vendor first —</option>';
-  refreshWhSelect();
+/* ============ upload / parsing ============
+   Every warehouse row and every vendor's "new warehouse" box is its own drop
+   target; `target` is {whId} for an existing warehouse or {vendorId} for a new
+   one, and rides along with the file through parsing to the review modal. */
+const UPLOAD_ACCEPT = '.csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png,.webp,.gif';
+function pickFile(target){
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept=UPLOAD_ACCEPT;
+  inp.onchange = ()=>{ if(inp.files[0]) handleFile(inp.files[0], target); };
+  inp.click();
 }
-function refreshWhSelect(){
-  const vid = $('#upVendor').value;
-  const whs = db.warehouses.filter(w=>w.vendorId===vid);
-  $('#upWarehouse').innerHTML = whs.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('') + '<option value="__new__">＋ New warehouse…</option>';
-  $('#upNewWhWrap').style.display = $('#upWarehouse').value==='__new__' ? '' : 'none';
-}
-$('#upVendor').onchange = refreshWhSelect;
-$('#upWarehouse').onchange = ()=>{ $('#upNewWhWrap').style.display = $('#upWarehouse').value==='__new__' ? '' : 'none'; };
-
-const dz = $('#dropZone');
-dz.onclick = ()=>$('#fileInput').click();
-$('#fileInput').onchange = e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; };
-dz.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('dragover');});
-dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
-dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('dragover'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-
-function handleFile(file){
-  if(!db.vendors.length){ toast('Add a vendor first'); return; }
+function handleFile(file, target){
+  if(!target || (!target.whId && !target.vendorId)){ toastErr('Internal error: no upload target'); return; }
   const ext = file.name.split('.').pop().toLowerCase();
   if(ext==='csv'){
-    Papa.parse(file, {complete: res=>gridToReview(res.data, file.name), skipEmptyLines:'greedy'});
+    Papa.parse(file, {complete: res=>gridToReview(res.data, file.name, target), skipEmptyLines:'greedy'});
   } else if(ext==='xlsx'||ext==='xls'){
     const r = new FileReader();
     r.onload = ()=>{ const wb = XLSX.read(r.result, {type:'array'});
       const grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:''});
-      gridToReview(grid, file.name); };
+      gridToReview(grid, file.name, target); };
     r.readAsArrayBuffer(file);
   } else if(ext==='pdf'){
-    extractMedia(file, 'application/pdf');
+    extractMedia(file, 'application/pdf', target);
   } else if(['jpg','jpeg','png','webp','gif'].includes(ext)){
-    extractMedia(file, {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif'}[ext]);
+    extractMedia(file, {jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif'}[ext], target);
   } else toastErr('Unsupported file type: .'+ext+' — drop a CSV, XLSX, PDF, or an image (JPG/PNG)');
+}
+function targetWh(target){
+  return target && target.whId ? db.warehouses.find(w=>w.id===target.whId) : null;
 }
 
 function parseNum(v){
@@ -593,17 +588,21 @@ function extractFromGrid(grid){
   return out;
 }
 
-let pendingUpload = null; // {items, shipping, freeOver, minOrder, date, source}
-function gridToReview(grid, source){
+let pendingUpload = null; // {items, shipping, freeOver, minOrder, date}
+let pendingTarget = null; // {whId} or {vendorId}
+function gridToReview(grid, source, target){
   const ex = extractFromGrid(grid);
   if(!ex.items.length){ toastErr('No price rows found in '+source+' — expected columns like Code / Name / Specification / Price'); return; }
-  openReview(ex, source);
+  openReview(ex, source, target);
 }
 
-function openReview(ex, source){
+function openReview(ex, source, target){
   pendingUpload = ex;
-  $('#reviewMeta').textContent = `— ${ex.items.length} items from ${source}`;
-  const wh = currentTargetWh();
+  pendingTarget = target;
+  const wh = targetWh(target);
+  const vendor = db.vendors.find(v=>v.id===(wh?wh.vendorId:target.vendorId));
+  $('#reviewMeta').textContent = `— ${ex.items.length} items from ${source} → ${vendor?vendor.name:'?'}`;
+  $('#rvWhName').value = wh ? wh.name : 'Warehouse '+(db.warehouses.filter(w=>w.vendorId===target.vendorId).length+1);
   $('#rvShip').value = ex.shipping!=null?ex.shipping:(wh&&wh.shippingCost!=null?wh.shippingCost:'');
   $('#rvFree').value = ex.freeOver!=null?ex.freeOver:(wh&&wh.freeShipOver!=null?wh.freeShipOver:'');
   $('#rvMin').value = ex.minOrder!=null?ex.minOrder:(wh&&wh.minOrder!=null?wh.minOrder:'');
@@ -630,13 +629,15 @@ $('#rvSave').onclick = ()=>{
     return {code:g('code'), name:g('name'), spec:g('spec'), price:parseNum(g('price'))};
   }).filter(it=>it.name && it.price!=null);
   if(!items.length){ toast('No valid rows'); return; }
-  let wh = currentTargetWh();
+  let wh = targetWh(pendingTarget);
   const num = v => v===''?null:parseFloat(v);
   if(!wh){
-    const vid = $('#upVendor').value; if(!vid){ toast('Pick a vendor'); return; }
-    wh = {id:uid(), vendorId:vid, name:$('#upNewWh').value.trim()||'Warehouse '+(db.warehouses.filter(w=>w.vendorId===vid).length+1), items:[]};
+    const vid = pendingTarget && pendingTarget.vendorId;
+    if(!vid){ toastErr('Upload target vendor no longer exists'); return; }
+    wh = {id:uid(), vendorId:vid, name:'', items:[]};
     db.warehouses.push(wh);
   }
+  wh.name = $('#rvWhName').value.trim() || wh.name || 'Warehouse';
   wh.shippingCost = num($('#rvShip').value);
   wh.freeShipOver = num($('#rvFree').value);
   wh.minOrder = num($('#rvMin').value);
@@ -646,16 +647,11 @@ $('#rvSave').onclick = ()=>{
   toast(`Saved ${items.length} items to ${wh.name}`);
   renderAll();
 };
-function currentTargetWh(){
-  const wid = $('#upWarehouse').value;
-  return wid && wid!=='__new__' ? db.warehouses.find(w=>w.id===wid) : null;
-}
-
-/* ============ PDF via Claude API ============ */
-async function extractMedia(file, mediaType){
+/* ============ PDF / image via Claude API ============ */
+async function extractMedia(file, mediaType, target){
   const key = db.settings.apiKey;
   if(!key){ toastErr('PDF/image extraction needs a Claude API key — add one in ⚙ Settings'); $('#setOverlay').classList.add('open'); return; }
-  dz.innerHTML = '<div><span class="spin"></span>Extracting prices from '+esc(file.name)+' with Claude…</div>';
+  toast('Extracting prices from '+file.name+' with Claude…', true); // sticky until done
   try{
     const b64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
     const mediaBlock = mediaType==='application/pdf'
@@ -700,19 +696,13 @@ async function extractMedia(file, mediaType){
     }
     const items = (parsed.items||[]).map(it=>({code:it.code||'', name:it.name||'', spec:it.spec||'', price:parseNum(it.price)})).filter(it=>it.name&&it.price!=null);
     if(!items.length) throw new Error('The model found no product/price rows in '+file.name);
-    if(truncated) toastErr('⚠ The reply was cut off — recovered '+items.length+' items, but the END of the price list may be missing. Double-check the bottom of the review table against the PDF.');
-    openReview({items, shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null}, file.name);
+    if(truncated) toastErr('⚠ The reply was cut off — recovered '+items.length+' items, but the END of the price list may be missing. Double-check the bottom of the review table against the file.');
+    else toastHide();
+    openReview({items, shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null}, file.name, target);
   }catch(err){
     console.error('Extraction error:', err);
     toastErr('Extraction failed — '+err.message);
-  }finally{
-    resetDropZone();
   }
-}
-function resetDropZone(){
-  dz.innerHTML = `<div class="big">⇩</div>
-    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), PDF, or a photo/screenshot (JPG, PNG) — or click to browse</div>
-    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs and images are extracted with Claude AI — add your API key in ⚙ Settings.</div>`;
 }
 
 /* ============ search / catalog ============ */
@@ -1078,7 +1068,7 @@ $('#themeBtn').onclick = ()=> applyTheme(document.documentElement.getAttribute('
 applyTheme((function(){ try{ const s=localStorage.getItem('vialhunter_theme'); if(s==='light'||s==='dark') return s; }catch(e){} return 'dark'; })());
 
 /* ============ init ============ */
-function renderAll(){ renderVendors(); refreshUploadSelects(); refreshVendorFilter(); renderResults(); renderCartCount(); }
+function renderAll(){ renderVendors(); refreshVendorFilter(); renderResults(); renderCartCount(); }
 renderAll();
 //JS-END
 </script>
