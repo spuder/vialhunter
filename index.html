@@ -899,18 +899,21 @@ function shippingFor(wh, subtotal){
 function optimize(){
   const cat = buildCatalog();
   const cart = db.cart.map(c=>{
-    let offers = (cat.lookup.get(normKey(c.name,c.spec))||{offers:[]}).offers;
-    if(c.whId){ const pinned = offers.filter(o=>o.wh.id===c.whId); if(pinned.length) offers = pinned; }
-    return {...c, key:normKey(c.name,c.spec), offers};
+    const all = (cat.lookup.get(normKey(c.name,c.spec))||{offers:[]}).offers;
+    let offers = all;
+    if(c.whId){ const pinned = all.filter(o=>o.wh.id===c.whId); if(pinned.length) offers = pinned; }
+    return {...c, key:normKey(c.name,c.spec), offers, allOffers:all};
   });
   const whSet = new Map();
-  cart.forEach(c=>c.offers.forEach(o=>whSet.set(o.wh.id, o.wh)));
+  cart.forEach(c=>c.allOffers.forEach(o=>whSet.set(o.wh.id, o.wh)));
   const whs = [...whSet.values()];
-  const evalSubset = (list)=>{
+  // ignorePins: single-vendor plans override pins by definition — a vendor that
+  // stocks a pinned item must not be reported as "missing" it
+  const evalSubset = (list, ignorePins)=>{
     const assign = new Map(); // whId -> {wh, lines:[{item, offer}], subtotal}
     let covered = 0, itemsTotal = 0;
     for(const c of cart){
-      const av = c.offers.filter(o=>list.includes(o.wh));
+      const av = (ignorePins ? c.allOffers : c.offers).filter(o=>list.includes(o.wh));
       if(!av.length) continue;
       const best = av.reduce((a,b)=>a.price<=b.price?a:b);
       covered++;
@@ -944,9 +947,10 @@ function optimize(){
   } else if(whs.length){
     consider(evalSubset(whs));
   }
-  // per-single-warehouse comparison cards (with the exact items that vendor lacks)
-  const singles = whs.map(w=>{ const r = evalSubset([w]);
-    return {wh:w, ...r, missing:cart.length-r.covered, missingItems:cart.filter(c=>!c.offers.some(o=>o.wh.id===w.id))}; });
+  // per-single-warehouse comparison cards (with the exact items that vendor lacks);
+  // pins are ignored here so "missing" reflects the vendor's real stock
+  const singles = whs.map(w=>{ const r = evalSubset([w], true);
+    return {wh:w, ...r, missing:cart.length-r.covered, missingItems:cart.filter(c=>!c.allOffers.some(o=>o.wh.id===w.id))}; });
   return {best, singles, cart};
 }
 
