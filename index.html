@@ -40,7 +40,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 header{position:sticky;top:0;z-index:50;background:var(--headbg);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 header .logo{font-weight:800;font-size:17px;white-space:nowrap;display:flex;align-items:center;gap:7px}
 header .logo span{color:var(--accent)}
-#searchBar{flex:1;min-width:220px;max-width:640px;position:relative}
+.searchrow{display:flex;gap:10px;align-items:center;margin:30px 0 4px}
+#searchBar{flex:1;min-width:220px;position:relative}
 #searchInput{width:100%;padding:10px 14px 10px 38px;border-radius:10px;font-size:15px}
 #searchBar::before{content:"⌕";position:absolute;left:13px;top:8px;font-size:19px;color:var(--muted)}
 #cartBtn{position:relative;font-weight:600}
@@ -153,8 +154,7 @@ tr.gchild td:first-child{padding-left:32px}
 <body>
 <header>
   <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="7.5" y="1.5" width="9" height="3.5" rx="1.2" fill="var(--muted)"/><path d="M9.5 5.5v9.7a2.5 2.5 0 0 0 5 0V5.5" fill="none" stroke="var(--text)" stroke-width="1.6" stroke-linecap="round"/><path d="M9.5 11h5v4.2a2.5 2.5 0 0 1-5 0z" fill="var(--accent)"/></svg>Vial<span>Hunter</span></div>
-  <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
-  <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
+  <div style="flex:1"></div>
   <button id="cartBtn">🛒 Cart<span id="cartCount" style="display:none">0</span></button>
   <button id="themeBtn" title="Toggle light / dark theme">☀</button>
   <button id="settingsBtn" title="Settings">⚙</button>
@@ -168,6 +168,10 @@ tr.gchild td:first-child{padding-left:32px}
   <div class="hint" style="margin-bottom:10px">Drop a price list — CSV, Excel, PDF, or a photo/screenshot — onto any warehouse row, or onto a vendor's “new warehouse” box below it. CSV/Excel parse locally; PDFs &amp; images are extracted with Claude AI (add your API key in ⚙ Settings).</div>
   <div id="vendorGrid"></div>
 
+  <div class="searchrow">
+    <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
+    <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
+  </div>
   <h2 id="resultsTitle">All products</h2>
   <div id="results"></div>
 
