@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peptide Price Compare</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0f1117; --panel:#171a23; --panel2:#1f2330; --border:#2a2f3e;
+  --text:#e8eaf0; --muted:#8b91a5; --accent:#f97316; --accent2:#fb923c;
+  --best:#34d399; --bestbg:rgba(52,211,153,.12); --danger:#f87171;
+  --link:#60a5fa;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.45}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font:inherit;cursor:pointer;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:8px;padding:7px 14px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:var(--accent2)}
+button.small{padding:3px 9px;font-size:13px;border-radius:6px}
+button.danger{color:var(--danger)}
+input,select,textarea{font:inherit;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+header{position:sticky;top:0;z-index:50;background:rgba(15,17,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header .logo{font-weight:800;font-size:17px;white-space:nowrap}
+header .logo span{color:var(--accent)}
+#searchBar{flex:1;min-width:220px;max-width:640px;position:relative}
+#searchInput{width:100%;padding:10px 14px 10px 38px;border-radius:10px;font-size:15px}
+#searchBar::before{content:"⌕";position:absolute;left:13px;top:8px;font-size:19px;color:var(--muted)}
+#cartBtn{position:relative;font-weight:600}
+#cartCount{position:absolute;top:-8px;right:-8px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
+main{max-width:1280px;margin:0 auto;padding:22px 20px 80px}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 12px}
+.hint{color:var(--muted);font-size:13px}
+
+/* vendor cards */
+#vendorGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.vcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.vcard.dragover{border-color:var(--accent);background:var(--panel2)}
+.vhead{display:flex;gap:12px;align-items:center}
+.vphoto{width:56px;height:56px;border-radius:12px;background:var(--panel2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);overflow:hidden;flex-shrink:0;cursor:pointer}
+.vphoto img{width:100%;height:100%;object-fit:cover}
+.vname{font-weight:700;font-size:16px}
+.vphone a{font-size:14px}
+.wa{display:inline-flex;align-items:center;gap:5px;color:#25d366 !important;font-weight:600}
+.wa:hover{text-decoration:underline}
+.contactrow{display:flex;justify-content:space-between;font-size:14px;padding:3px 0;border-top:1px solid var(--border)}
+.contactrow:first-of-type{border-top:none}
+.whrow{display:flex;justify-content:space-between;align-items:center;background:var(--panel2);border-radius:8px;padding:6px 10px;font-size:13px;margin-bottom:6px}
+.whrow .meta{color:var(--muted)}
+.vfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
+.addcard{border:2px dashed var(--border);border-radius:14px;display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;min-height:170px;text-align:center;padding:14px}
+.addcard:hover,.addcard.dragover{border-color:var(--accent);color:var(--text)}
+.addcard .big{font-size:30px}
+
+/* dropzone */
+#dropZone{border:2px dashed var(--border);border-radius:16px;background:var(--panel);padding:40px 20px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
+#dropZone.dragover{border-color:var(--accent);background:var(--panel2);color:var(--text)}
+#dropZone .big{font-size:36px;margin-bottom:8px}
+.uprow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.uprow label{font-size:13px;color:var(--muted)}
+
+/* results */
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+td{padding:14px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover td{background:rgba(255,255,255,.02)}
+.offers{display:flex;flex-wrap:wrap;gap:8px}
+.offer{display:inline-flex;flex-direction:column;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;min-width:96px;cursor:pointer;transition:border-color .12s}
+.offer:hover{border-color:var(--accent)}
+.offer .p{font-weight:700;font-size:15px}
+.offer .v{color:var(--muted);font-size:12px}
+.offer.best{border-color:var(--best);background:var(--bestbg)}
+.offer.best .p{color:var(--best)}
+.offer.pinned{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.pinbadge{display:inline-block;background:rgba(249,115,22,.15);color:var(--accent2);font-size:10px;font-weight:800;letter-spacing:.05em;border-radius:5px;padding:1px 5px;margin-bottom:2px}
+.badge{display:inline-block;background:var(--bestbg);color:var(--best);font-size:10px;font-weight:800;letter-spacing:.05em;border-radius:5px;padding:1px 5px;margin-bottom:2px}
+.prodname{font-weight:700}
+.prodspec{color:var(--muted);font-size:13px}
+tr.ghead td{background:var(--panel);cursor:pointer;padding:11px 10px;user-select:none}
+tr.ghead:hover td{background:var(--panel2)}
+tr.ghead .caret{display:inline-block;width:18px;color:var(--accent);transition:transform .12s}
+tr.ghead.open .caret{transform:rotate(90deg)}
+tr.ghead .gmeta{color:var(--muted);font-size:13px;font-weight:400;margin-left:8px}
+tr.gchild td:first-child{padding-left:32px}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:22px;width:100%;max-width:680px}
+.modal.wide{max-width:980px}
+.modal h3{margin-bottom:14px;font-size:18px}
+.frow{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.frow>div{flex:1;min-width:150px}
+.frow label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.frow input,.frow select,.frow textarea{width:100%}
+.mfoot{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.photodrop{width:84px;height:84px;border-radius:14px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;overflow:hidden;flex-shrink:0}
+.photodrop img{width:100%;height:100%;object-fit:cover}
+.photodrop.dragover{border-color:var(--accent)}
+
+/* review table */
+#reviewTable td input{width:100%;padding:4px 6px;font-size:13px;border-radius:5px}
+#reviewTable td{padding:3px 4px}
+
+/* cart */
+#cartOverlay .modal{max-width:900px}
+.cartitem{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.cartitem .n{flex:1}
+.cartitem input{width:60px;text-align:center;padding:4px}
+.vendorcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:14px}
+.vcost{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer;transition:border-color .12s}
+.vcost:hover{border-color:var(--accent2)}
+.vcost.cheapest{border-color:var(--best);box-shadow:0 0 0 1px var(--best)}
+.vcost.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.vcost .vn{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent2)}
+.vcost .tot{font-size:22px;font-weight:800;margin-top:4px}
+.vcost .sub{color:var(--muted);font-size:13px}
+.vcost .miss{color:var(--muted);font-style:italic;font-size:13px;margin-top:4px}
+.chip{display:inline-block;background:var(--bestbg);color:var(--best);font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;margin-left:6px}
+.plan{background:var(--panel2);border:1px solid var(--best);border-radius:12px;padding:14px;margin-top:16px}
+.plan h4{color:var(--best);margin-bottom:8px}
+.planwh{margin-bottom:14px}
+.planwh .whn{font-weight:700}
+.msgbox{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;margin:6px 0;max-height:180px;overflow:auto}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:10px;padding:10px 18px;z-index:200;display:none}
+.empty{border:1px dashed var(--border);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Peptide<span>Compare</span></div>
+  <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
+  <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
+  <button id="cartBtn">🛒 Cart<span id="cartCount" style="display:none">0</span></button>
+  <button id="settingsBtn" title="Settings">⚙</button>
+  <button id="exportBtn" title="Download all data as JSON">Export</button>
+  <button id="importBtn" title="Restore from JSON">Import</button>
+  <input type="file" id="importFile" accept=".json" style="display:none">
+</header>
+<main>
+
+  <h2>Vendors</h2>
+  <div id="vendorGrid"></div>
+
+  <h2>Upload price list</h2>
+  <div class="uprow">
+    <div><label>Vendor</label><br><select id="upVendor"></select></div>
+    <div><label>Warehouse</label><br><select id="upWarehouse"></select></div>
+    <div id="upNewWhWrap" style="display:none"><label>New warehouse name</label><br><input id="upNewWh" placeholder="Warehouse 1"></div>
+  </div>
+  <div id="dropZone">
+    <div class="big">⇩</div>
+    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), or PDF — or click to browse</div>
+    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs are extracted with Claude AI — add your API key in ⚙ Settings.</div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.pdf" style="display:none">
+  </div>
+
+  <h2 id="resultsTitle">All products</h2>
+  <div id="results"></div>
+
+</main>
+
+<!-- Vendor modal -->
+<div class="overlay" id="vendorOverlay"><div class="modal">
+  <h3 id="vmTitle">Add vendor</h3>
+  <div class="frow">
+    <div class="photodrop" id="vmPhoto" title="Drop or click to set photo"><span>📷</span></div>
+    <div style="flex:3">
+      <div class="frow">
+        <div><label>Company name</label><input id="vmName" placeholder="Acme Peptides"></div>
+      </div>
+      <div class="frow">
+        <div><label>WhatsApp number (with country code)</label><input id="vmPhone" placeholder="+1 555 555 5555"></div>
+        <div><label>Website (optional)</label><input id="vmSite" placeholder="example.com"></div>
+      </div>
+    </div>
+  </div>
+  <div class="frow"><div>
+    <label>Employees / contacts — one per line: <code>Name, +phone</code></label>
+    <textarea id="vmContacts" rows="3" placeholder="Bob, +1 555 555 5501&#10;Steve, +1 555 555 5502"></textarea>
+  </div></div>
+  <input type="file" id="vmPhotoFile" accept="image/*" style="display:none">
+  <div class="mfoot">
+    <button id="vmCancel">Cancel</button>
+    <button class="primary" id="vmSave">Save vendor</button>
+  </div>
+</div></div>
+
+<!-- Warehouse modal -->
+<div class="overlay" id="whOverlay"><div class="modal">
+  <h3 id="whTitle">Warehouse</h3>
+  <div class="frow">
+    <div><label>Name</label><input id="whName" placeholder="Warehouse 1"></div>
+    <div><label>Shipping cost ($)</label><input id="whShip" type="number" step="0.01" placeholder="60"></div>
+  </div>
+  <div class="frow">
+    <div><label>Free shipping over ($, optional)</label><input id="whFree" type="number" step="0.01"></div>
+    <div><label>Minimum order ($, optional)</label><input id="whMin" type="number" step="0.01"></div>
+  </div>
+  <div class="mfoot">
+    <button id="whCancel">Cancel</button>
+    <button class="primary" id="whSave">Save</button>
+  </div>
+</div></div>
+
+<!-- Review modal -->
+<div class="overlay" id="reviewOverlay"><div class="modal wide">
+  <h3>Review extracted items <span class="hint" id="reviewMeta"></span></h3>
+  <div class="frow">
+    <div><label>Shipping cost ($)</label><input id="rvShip" type="number" step="0.01"></div>
+    <div><label>Free ship over ($)</label><input id="rvFree" type="number" step="0.01"></div>
+    <div><label>Minimum order ($)</label><input id="rvMin" type="number" step="0.01"></div>
+  </div>
+  <div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px">
+    <table id="reviewTable"><thead><tr><th>Code</th><th>Name</th><th>Specification</th><th>Price ($)</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+  <div style="margin-top:8px"><button class="small" id="rvAddRow">+ Add row</button></div>
+  <div class="mfoot">
+    <button id="rvCancel">Cancel</button>
+    <button class="primary" id="rvSave">Save price list</button>
+  </div>
+</div></div>
+
+<!-- Settings modal -->
+<div class="overlay" id="setOverlay"><div class="modal">
+  <h3>Settings</h3>
+  <div class="frow"><div>
+    <label>Claude API key (enables PDF extraction — stored only in this browser)</label>
+    <input id="setKey" type="password" placeholder="sk-ant-…">
+  </div></div>
+  <div class="frow"><div>
+    <label>Model</label>
+    <input id="setModel" placeholder="claude-sonnet-5">
+  </div></div>
+  <p class="hint">Your key never leaves this browser except to call api.anthropic.com directly. All vendor/price data is stored in this browser's localStorage — use Export regularly to back up.</p>
+  <div class="mfoot">
+    <button id="setCancel">Cancel</button>
+    <button class="primary" id="setSave">Save</button>
+  </div>
+</div></div>
+
+<!-- Cart modal -->
+<div class="overlay" id="cartOverlay"><div class="modal wide">
+  <h3>🛒 Cart &amp; best-price plan</h3>
+  <div id="cartBody"></div>
+  <div class="mfoot">
+    <button id="cartClear" class="danger">Clear cart</button>
+    <button id="cartClose">Close</button>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+//JS-START
+/* ============ state ============ */
+const DBKEY = 'peptideCompareDB_v1';
+let db = load();
+function load(){
+  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors) return d; }catch(e){}
+  return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
+}
+function save(){ localStorage.setItem(DBKEY, JSON.stringify(db)); }
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function $(s){ return document.querySelector(s); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function money(n){ return '$' + (+n).toFixed(2).replace(/\.00$/,''); }
+function digits(p){ return String(p||'').replace(/[^0-9]/g,''); }
+function waLink(p, text){ const d = digits(p); if(!d) return null; return 'https://wa.me/'+d+(text?'?text='+encodeURIComponent(text):''); }
+function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',2600); }
+function vendorOf(wh){ return db.vendors.find(v=>v.id===wh.vendorId); }
+
+/* ============ vendors ============ */
+let editingVendorId = null, vmPhotoData = null;
+
+function renderVendors(){
+  const g = $('#vendorGrid');
+  g.innerHTML = '';
+  for(const v of db.vendors){
+    const whs = db.warehouses.filter(w=>w.vendorId===v.id);
+    const card = document.createElement('div');
+    card.className = 'vcard';
+    card.innerHTML = `
+      <div class="vhead">
+        <div class="vphoto" data-vid="${v.id}">${v.photo?`<img src="${v.photo}">`:'📷'}</div>
+        <div>
+          <div class="vname">${esc(v.name)}</div>
+          <div class="vphone">${v.phone?`<a class="wa" target="_blank" href="${waLink(v.phone)}">🟢 ${esc(v.phone)}</a>`:''}</div>
+          ${v.site?`<a href="${/^https?:/.test(v.site)?esc(v.site):'https://'+esc(v.site)}" target="_blank" style="font-size:13px">${esc(v.site)}</a>`:''}
+        </div>
+      </div>
+      <div>${(v.contacts||[]).map(c=>`<div class="contactrow"><span>${esc(c.name)}</span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
+      <div>${whs.map(w=>`<div class="whrow"><span>🏭 ${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
+        <span><button class="small" data-editwh="${w.id}">Edit</button> <button class="small danger" data-delwh="${w.id}">✕</button></span></div>`).join('')}</div>
+      <div class="vfoot">
+        <button class="small" data-addwh="${v.id}">+ Warehouse</button>
+        <button class="small" data-editv="${v.id}">Edit</button>
+        <button class="small danger" data-delv="${v.id}">Delete</button>
+      </div>`;
+    // drop photo or vcf directly onto card
+    card.addEventListener('dragover', e=>{e.preventDefault(); card.classList.add('dragover');});
+    card.addEventListener('dragleave', ()=>card.classList.remove('dragover'));
+    card.addEventListener('drop', e=>{
+      e.preventDefault(); card.classList.remove('dragover');
+      const f = e.dataTransfer.files[0]; if(!f) return;
+      if(f.type.startsWith('image/')) readImage(f, data=>{ v.photo=data; save(); renderVendors(); });
+      else if(/\.vcf$/i.test(f.name)) f.text().then(t=>{ applyVcard(v, t); save(); renderVendors(); toast('Contact card merged'); });
+    });
+    g.appendChild(card);
+  }
+  // add-vendor card (drop target for vcf / image)
+  const add = document.createElement('div');
+  add.className = 'addcard';
+  add.innerHTML = '<div class="big">＋</div><div><strong>Add vendor</strong></div><div class="hint">Click, or drag a contact photo / .vcf file here</div>';
+  add.addEventListener('click', ()=>openVendorModal(null));
+  add.addEventListener('dragover', e=>{e.preventDefault(); add.classList.add('dragover');});
+  add.addEventListener('dragleave', ()=>add.classList.remove('dragover'));
+  add.addEventListener('drop', e=>{
+    e.preventDefault(); add.classList.remove('dragover');
+    const f = e.dataTransfer.files[0]; if(!f) return;
+    if(f.type.startsWith('image/')) readImage(f, data=>{ openVendorModal(null); vmPhotoData=data; $('#vmPhoto').innerHTML=`<img src="${data}">`; });
+    else if(/\.vcf$/i.test(f.name)) f.text().then(t=>{ const tmp={}; applyVcard(tmp,t); openVendorModal(null);
+      $('#vmName').value=tmp.name||''; $('#vmPhone').value=tmp.phone||'';
+      if(tmp.photo){ vmPhotoData=tmp.photo; $('#vmPhoto').innerHTML=`<img src="${tmp.photo}">`; } });
+  });
+  g.appendChild(add);
+
+  g.querySelectorAll('[data-editv]').forEach(b=>b.onclick=()=>openVendorModal(b.dataset.editv));
+  g.querySelectorAll('[data-delv]').forEach(b=>b.onclick=()=>{ if(confirm('Delete vendor and its warehouses?')){
+    db.warehouses = db.warehouses.filter(w=>w.vendorId!==b.dataset.delv);
+    db.vendors = db.vendors.filter(v=>v.id!==b.dataset.delv); save(); renderAll(); }});
+  g.querySelectorAll('[data-addwh]').forEach(b=>b.onclick=()=>openWhModal(null, b.dataset.addwh));
+  g.querySelectorAll('[data-editwh]').forEach(b=>b.onclick=()=>openWhModal(b.dataset.editwh));
+  g.querySelectorAll('[data-delwh]').forEach(b=>b.onclick=()=>{ if(confirm('Delete warehouse and its price list?')){
+    db.warehouses = db.warehouses.filter(w=>w.id!==b.dataset.delwh); save(); renderAll(); }});
+  g.querySelectorAll('.vphoto[data-vid]').forEach(el=>el.onclick=()=>{
+    const v = db.vendors.find(x=>x.id===el.dataset.vid);
+    const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+    inp.onchange=()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ v.photo=d; save(); renderVendors(); }); };
+    inp.click();
+  });
+}
+
+function applyVcard(obj, text){
+  const fn = text.match(/^FN[^:]*:(.+)$/mi); if(fn) obj.name = fn[1].trim();
+  const org = text.match(/^ORG[^:]*:(.+)$/mi); if(org && !obj.name) obj.name = org[1].trim();
+  const tel = text.match(/^TEL[^:]*:(.+)$/mi); if(tel) obj.phone = tel[1].trim();
+  const ph = text.match(/PHOTO[^:]*;ENCODING=b[^:]*:([A-Za-z0-9+/=\r\n]+)/i);
+  if(ph) obj.photo = 'data:image/jpeg;base64,' + ph[1].replace(/[\r\n\s]/g,'');
+}
+
+function readImage(file, cb){
+  const r = new FileReader();
+  r.onload = ()=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const c = document.createElement('canvas');
+      const s = Math.min(1, 200/Math.max(img.width, img.height));
+      c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      cb(c.toDataURL('image/jpeg',.85));
+    };
+    img.src = r.result;
+  };
+  r.readAsDataURL(file);
+}
+
+function openVendorModal(id){
+  editingVendorId = id; vmPhotoData = null;
+  const v = id ? db.vendors.find(x=>x.id===id) : null;
+  $('#vmTitle').textContent = v ? 'Edit vendor' : 'Add vendor';
+  $('#vmName').value = v?v.name:''; $('#vmPhone').value = v?v.phone||'':'';
+  $('#vmSite').value = v?v.site||'':'';
+  $('#vmContacts').value = v?(v.contacts||[]).map(c=>c.name+(c.phone?', '+c.phone:'')).join('\n'):'';
+  $('#vmPhoto').innerHTML = v&&v.photo ? `<img src="${v.photo}">` : '<span>📷</span>';
+  if(v&&v.photo) vmPhotoData = v.photo;
+  $('#vendorOverlay').classList.add('open');
+}
+$('#vmCancel').onclick = ()=>$('#vendorOverlay').classList.remove('open');
+$('#vmSave').onclick = ()=>{
+  const name = $('#vmName').value.trim(); if(!name){ toast('Company name required'); return; }
+  const contacts = $('#vmContacts').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+    const i = l.lastIndexOf(','); return i<0 ? {name:l, phone:''} : {name:l.slice(0,i).trim(), phone:l.slice(i+1).trim()};
+  });
+  const data = {name, phone:$('#vmPhone').value.trim(), site:$('#vmSite').value.trim(), contacts, photo:vmPhotoData};
+  if(editingVendorId){ Object.assign(db.vendors.find(v=>v.id===editingVendorId), data); }
+  else db.vendors.push(Object.assign({id:uid()}, data));
+  save(); $('#vendorOverlay').classList.remove('open'); renderAll();
+};
+const vmp = $('#vmPhoto');
+vmp.onclick = ()=>$('#vmPhotoFile').click();
+$('#vmPhotoFile').onchange = e=>{ if(e.target.files[0]) readImage(e.target.files[0], d=>{ vmPhotoData=d; vmp.innerHTML=`<img src="${d}">`; }); };
+vmp.addEventListener('dragover', e=>{e.preventDefault(); vmp.classList.add('dragover');});
+vmp.addEventListener('dragleave', ()=>vmp.classList.remove('dragover'));
+vmp.addEventListener('drop', e=>{ e.preventDefault(); vmp.classList.remove('dragover');
+  const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('image/')) readImage(f, d=>{ vmPhotoData=d; vmp.innerHTML=`<img src="${d}">`; }); });
+
+/* ============ warehouses ============ */
+let editingWhId = null, whVendorId = null;
+function openWhModal(whId, vendorId){
+  editingWhId = whId; whVendorId = vendorId;
+  const w = whId ? db.warehouses.find(x=>x.id===whId) : null;
+  $('#whTitle').textContent = w ? 'Edit warehouse — '+w.name : 'New warehouse';
+  $('#whName').value = w?w.name:''; $('#whShip').value = w&&w.shippingCost!=null?w.shippingCost:'';
+  $('#whFree').value = w&&w.freeShipOver!=null?w.freeShipOver:'';
+  $('#whMin').value = w&&w.minOrder!=null?w.minOrder:'';
+  $('#whOverlay').classList.add('open');
+}
+$('#whCancel').onclick = ()=>$('#whOverlay').classList.remove('open');
+$('#whSave').onclick = ()=>{
+  const name = $('#whName').value.trim() || 'Warehouse';
+  const num = v => v===''?null:parseFloat(v);
+  if(editingWhId){
+    const w = db.warehouses.find(x=>x.id===editingWhId);
+    Object.assign(w, {name, shippingCost:num($('#whShip').value), freeShipOver:num($('#whFree').value), minOrder:num($('#whMin').value)});
+  } else {
+    db.warehouses.push({id:uid(), vendorId:whVendorId, name, shippingCost:num($('#whShip').value),
+      freeShipOver:num($('#whFree').value), minOrder:num($('#whMin').value), uploadDate:null, items:[]});
+  }
+  save(); $('#whOverlay').classList.remove('open'); renderAll();
+};
+
+/* ============ upload / parsing ============ */
+function refreshUploadSelects(){
+  const vs = $('#upVendor'), ws = $('#upWarehouse');
+  vs.innerHTML = db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('') || '<option value="">— add a vendor first —</option>';
+  refreshWhSelect();
+}
+function refreshWhSelect(){
+  const vid = $('#upVendor').value;
+  const whs = db.warehouses.filter(w=>w.vendorId===vid);
+  $('#upWarehouse').innerHTML = whs.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('') + '<option value="__new__">＋ New warehouse…</option>';
+  $('#upNewWhWrap').style.display = $('#upWarehouse').value==='__new__' ? '' : 'none';
+}
+$('#upVendor').onchange = refreshWhSelect;
+$('#upWarehouse').onchange = ()=>{ $('#upNewWhWrap').style.display = $('#upWarehouse').value==='__new__' ? '' : 'none'; };
+
+const dz = $('#dropZone');
+dz.onclick = ()=>$('#fileInput').click();
+$('#fileInput').onchange = e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; };
+dz.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('dragover');});
+dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
+dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('dragover'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+function handleFile(file){
+  if(!db.vendors.length){ toast('Add a vendor first'); return; }
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext==='csv'){
+    Papa.parse(file, {complete: res=>gridToReview(res.data, file.name), skipEmptyLines:'greedy'});
+  } else if(ext==='xlsx'||ext==='xls'){
+    const r = new FileReader();
+    r.onload = ()=>{ const wb = XLSX.read(r.result, {type:'array'});
+      const grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:''});
+      gridToReview(grid, file.name); };
+    r.readAsArrayBuffer(file);
+  } else if(ext==='pdf'){
+    extractPdf(file);
+  } else toast('Unsupported file type: '+ext);
+}
+
+function parseNum(v){
+  if(v==null) return null;
+  const m = String(v).replace(/[^0-9.\-]/g,'');
+  if(m==='' || isNaN(+m)) return null;
+  return +m;
+}
+
+/* Detect meta rows + header + item rows from a 2-D grid (CSV/Excel).
+   Understands the "P Test" layout: Shipping Cost / Minimum Order / Upload Date meta
+   rows followed by a Code|Name|Specification|Price header. */
+function extractFromGrid(grid){
+  const out = {items:[], shipping:null, freeOver:null, minOrder:null, date:null};
+  let headerIdx = -1, cols = null;
+  for(let i=0;i<grid.length;i++){
+    const row = (grid[i]||[]).map(c=>String(c==null?'':c).trim());
+    const joined = row.join(' ').toLowerCase();
+    if(/shipping/.test(joined) && out.shipping==null){ const n=row.map(parseNum).find(x=>x!=null); if(n!=null) out.shipping=n; }
+    if(/free ship|free over/.test(joined) && out.freeOver==null){ const n=row.map(parseNum).find(x=>x!=null); if(n!=null) out.freeOver=n; }
+    if(/minimum/.test(joined) && out.minOrder==null){ const n=row.map(parseNum).find(x=>x!=null); if(n!=null) out.minOrder=n; }
+    if(/upload date|date/.test(joined) && out.date==null){ const d=row.find(c=>/\d{1,4}[\/\-]\d{1,2}[\/\-]\d{1,4}/.test(c)); if(d) out.date=d; }
+    if(headerIdx<0){
+      const idx = {code:-1,name:-1,spec:-1,price:-1};
+      row.forEach((c,j)=>{ const l=c.toLowerCase();
+        if(idx.code<0 && /^(code|sku|item ?code|#)$/.test(l)) idx.code=j;
+        if(idx.name<0 && /^(name|product|item|peptide|description)$/.test(l)) idx.name=j;
+        if(idx.spec<0 && /^(spec|specification|size|dose|dosage|strength|variant)$/.test(l)) idx.spec=j;
+        if(idx.price<0 && /^(price|cost|usd|\$|price ?\(?\$?\)?|unit price)$/.test(l.replace(/\s*\(\$\)\s*/,''))) idx.price=j;
+      });
+      if(idx.name>=0 && idx.price>=0){ headerIdx=i; cols=idx; }
+    }
+  }
+  if(headerIdx<0){
+    // No header row found — guess columns by width
+    for(const raw of grid){
+      const row = (raw||[]).map(c=>String(c==null?'':c).trim()).filter((c,j,arr)=>true);
+      const cells = (raw||[]).map(c=>String(c==null?'':c).trim());
+      const nonEmpty = cells.filter(Boolean);
+      if(nonEmpty.length<2) continue;
+      let code='', name='', spec='', price=null;
+      if(nonEmpty.length>=4){ [code,name,spec]=nonEmpty; price=parseNum(nonEmpty[3]); }
+      else if(nonEmpty.length===3){ [name,spec]=nonEmpty; price=parseNum(nonEmpty[2]); }
+      else { name=nonEmpty[0]; price=parseNum(nonEmpty[1]); }
+      if(name && price!=null && !/shipping|minimum|upload|price|name/i.test(name)) out.items.push({code,name,spec,price});
+    }
+    return out;
+  }
+  for(let i=headerIdx+1;i<grid.length;i++){
+    const row = (grid[i]||[]).map(c=>String(c==null?'':c).trim());
+    const name = cols.name>=0 ? row[cols.name]||'' : '';
+    const price = parseNum(cols.price>=0 ? row[cols.price] : null);
+    if(!name || price==null) continue;
+    out.items.push({
+      code: cols.code>=0 ? row[cols.code]||'' : '',
+      name, spec: cols.spec>=0 ? row[cols.spec]||'' : '', price
+    });
+  }
+  return out;
+}
+
+let pendingUpload = null; // {items, shipping, freeOver, minOrder, date, source}
+function gridToReview(grid, source){
+  const ex = extractFromGrid(grid);
+  if(!ex.items.length){ toast('No price rows found — check the file format'); return; }
+  openReview(ex, source);
+}
+
+function openReview(ex, source){
+  pendingUpload = ex;
+  $('#reviewMeta').textContent = `— ${ex.items.length} items from ${source}`;
+  const wh = currentTargetWh();
+  $('#rvShip').value = ex.shipping!=null?ex.shipping:(wh&&wh.shippingCost!=null?wh.shippingCost:'');
+  $('#rvFree').value = ex.freeOver!=null?ex.freeOver:(wh&&wh.freeShipOver!=null?wh.freeShipOver:'');
+  $('#rvMin').value = ex.minOrder!=null?ex.minOrder:(wh&&wh.minOrder!=null?wh.minOrder:'');
+  const tb = $('#reviewTable tbody');
+  tb.innerHTML = '';
+  ex.items.forEach(it=>addReviewRow(it));
+  $('#reviewOverlay').classList.add('open');
+}
+function addReviewRow(it){
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td><input value="${esc(it.code)}" data-f="code" style="width:90px"></td>
+    <td><input value="${esc(it.name)}" data-f="name"></td>
+    <td><input value="${esc(it.spec)}" data-f="spec" style="width:120px"></td>
+    <td><input value="${it.price!=null?it.price:''}" data-f="price" type="number" step="0.01" style="width:90px"></td>
+    <td><button class="small danger">✕</button></td>`;
+  tr.querySelector('button').onclick = ()=>tr.remove();
+  $('#reviewTable tbody').appendChild(tr);
+}
+$('#rvAddRow').onclick = ()=>addReviewRow({code:'',name:'',spec:'',price:''});
+$('#rvCancel').onclick = ()=>$('#reviewOverlay').classList.remove('open');
+$('#rvSave').onclick = ()=>{
+  const items = [...$('#reviewTable tbody').rows].map(tr=>{
+    const g = f=>tr.querySelector(`[data-f=${f}]`).value.trim();
+    return {code:g('code'), name:g('name'), spec:g('spec'), price:parseNum(g('price'))};
+  }).filter(it=>it.name && it.price!=null);
+  if(!items.length){ toast('No valid rows'); return; }
+  let wh = currentTargetWh();
+  const num = v => v===''?null:parseFloat(v);
+  if(!wh){
+    const vid = $('#upVendor').value; if(!vid){ toast('Pick a vendor'); return; }
+    wh = {id:uid(), vendorId:vid, name:$('#upNewWh').value.trim()||'Warehouse '+(db.warehouses.filter(w=>w.vendorId===vid).length+1), items:[]};
+    db.warehouses.push(wh);
+  }
+  wh.shippingCost = num($('#rvShip').value);
+  wh.freeShipOver = num($('#rvFree').value);
+  wh.minOrder = num($('#rvMin').value);
+  wh.items = items;
+  wh.uploadDate = (pendingUpload&&pendingUpload.date) || new Date().toLocaleDateString();
+  save(); $('#reviewOverlay').classList.remove('open');
+  toast(`Saved ${items.length} items to ${wh.name}`);
+  renderAll();
+};
+function currentTargetWh(){
+  const wid = $('#upWarehouse').value;
+  return wid && wid!=='__new__' ? db.warehouses.find(w=>w.id===wid) : null;
+}
+
+/* ============ PDF via Claude API ============ */
+async function extractPdf(file){
+  const key = db.settings.apiKey;
+  if(!key){ toast('PDF extraction needs a Claude API key — add one in ⚙ Settings'); $('#setOverlay').classList.add('open'); return; }
+  dz.innerHTML = '<div><span class="spin"></span>Extracting prices from PDF with Claude…</div>';
+  try{
+    const b64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-api-key': key,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model: db.settings.model || 'claude-sonnet-5',
+        max_tokens: 8000,
+        messages:[{role:'user', content:[
+          {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64}},
+          {type:'text', text:'This is a vendor price list (mostly research peptides). Extract every product/price row. Respond with ONLY a JSON object, no markdown fences, shaped as: {"shipping": number|null, "minOrder": number|null, "items": [{"code": string, "name": string, "spec": string, "price": number}]}. "spec" is the size/dose like "5mg" or "10mg x 10 vials". Use null when a value is absent. Prices as plain numbers without currency symbols.'}
+        ]}]
+      })
+    });
+    if(!resp.ok){ const t = await resp.text(); throw new Error('API '+resp.status+': '+t.slice(0,200)); }
+    const data = await resp.json();
+    let text = (data.content||[]).map(b=>b.text||'').join('');
+    text = text.replace(/^```(json)?/m,'').replace(/```\s*$/m,'').trim();
+    const start = text.indexOf('{');
+    const parsed = JSON.parse(text.slice(start, text.lastIndexOf('}')+1));
+    const items = (parsed.items||[]).map(it=>({code:it.code||'', name:it.name||'', spec:it.spec||'', price:parseNum(it.price)})).filter(it=>it.name&&it.price!=null);
+    if(!items.length) throw new Error('No items found in PDF');
+    openReview({items, shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null}, file.name);
+  }catch(err){
+    toast('PDF extraction failed: '+err.message);
+  }finally{
+    resetDropZone();
+  }
+}
+function resetDropZone(){
+  dz.innerHTML = `<div class="big">⇩</div>
+    <div><strong>Drag &amp; drop a price list here</strong> — CSV, Excel (.xlsx), or PDF — or click to browse</div>
+    <div class="hint" style="margin-top:6px">CSV/Excel are parsed locally in your browser. PDFs are extracted with Claude AI — add your API key in ⚙ Settings.</div>`;
+}
+
+/* ============ search / catalog ============ */
+function normKey(name, spec){ return (name+'|'+spec).toLowerCase().replace(/\s+/g,' ').trim(); }
+
+/* --- fuzzy product identity ---
+   The same product often appears as "Retatrutide / 10mg*10vials / code RT10" at one
+   vendor and just "RT10" at another. Items are union-merged when they share ANY of:
+   - the same vendor code (normalized),
+   - a name that IS another item's code,
+   - the same normalized name + dose (spec reduced to "10mg" etc.). */
+function nameNorm(n){ return String(n||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function codeNorm(c){ return String(c||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function specNorm(spec){
+  const s = String(spec||'').toLowerCase();
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|iu|ml|g)\b/);
+  if(m) return m[1]+m[2];
+  return s.replace(/[^a-z0-9]/g,'');
+}
+function looksLikeCode(n){ const s=String(n||'').trim(); return s.length>0 && s.length<=8 && !/\s/.test(s) && /\d/.test(s) && /^[A-Za-z0-9\-+]+$/.test(s); }
+function nameScore(it){ const n=String(it.name||''); return (looksLikeCode(n)?0:100) + n.length + (String(it.spec||'').trim()?5:0); }
+
+function buildCatalog(){
+  const items = [];
+  for(const wh of db.warehouses) for(const it of wh.items) items.push({wh, code:it.code, name:it.name, spec:it.spec, price:it.price});
+  const parent = items.map((_,i)=>i);
+  const find = i => parent[i]===i ? i : (parent[i]=find(parent[i]));
+  const union = (a,b)=>{ parent[find(a)] = find(b); };
+  const keyMap = new Map();
+  items.forEach((it,i)=>{
+    const keys = ['n:'+nameNorm(it.name)+'|'+specNorm(it.spec)];
+    if(it.code) keys.push('c:'+codeNorm(it.code));
+    if(looksLikeCode(it.name)) keys.push('c:'+codeNorm(it.name));
+    for(const k of keys){ if(keyMap.has(k)) union(i, keyMap.get(k)); else keyMap.set(k, i); }
+  });
+  const groups = new Map();
+  items.forEach((it,i)=>{
+    const r = find(i);
+    if(!groups.has(r)) groups.set(r, {name:it.name, spec:it.spec, offers:[], memberKeys:new Set()});
+    const g = groups.get(r);
+    g.offers.push({wh:it.wh, price:it.price, code:it.code});
+    g.memberKeys.add(normKey(it.name, it.spec));
+    if(nameScore(it) > nameScore(g)){ g.name = it.name; g.spec = it.spec; }
+  });
+  const entries = [...groups.values()];
+  const lookup = new Map(); // any member's normKey -> group (keeps old cart entries valid)
+  for(const e of entries){ e.memberKeys.add(normKey(e.name, e.spec)); for(const k of e.memberKeys) lookup.set(k, e); }
+  return {entries, lookup};
+}
+
+function renderResults(){
+  const q = $('#searchInput').value.trim().toLowerCase();
+  const vf = $('#vendorFilter').value;
+  const cat = buildCatalog();
+  let entries = cat.entries;
+  if(vf){
+    entries = entries.map(e=>({...e, offers:e.offers.filter(o=>o.wh.vendorId===vf)})).filter(e=>e.offers.length);
+  }
+  if(q){
+    const toks = q.split(/\s+/);
+    entries = entries.filter(e=>{
+      const hay = (e.name+' '+e.spec+' '+e.offers.map(o=>o.code).join(' ')+' '+[...e.memberKeys].join(' ')).toLowerCase();
+      return toks.every(t=>hay.includes(t));
+    });
+  }
+  entries.sort((a,b)=> a.name.localeCompare(b.name) || (parseNum(a.spec)||0)-(parseNum(b.spec)||0));
+  const vfName = vf ? (db.vendors.find(v=>v.id===vf)||{}).name : null;
+  $('#resultsTitle').textContent = (q ? `Results for “${q}” — ${entries.length} match${entries.length===1?'':'es'}` : `All products (${entries.length})`) + (vfName?` — ${vfName} only`:'');
+  const el = $('#results');
+  if(!entries.length){
+    el.innerHTML = `<div class="empty">${db.warehouses.some(w=>w.items.length) ? 'No matches.' : 'No price lists yet — add a vendor above, then drop a CSV/Excel/PDF price list.'}</div>`;
+    return;
+  }
+  const chipData = [];
+  const rowFor = (e, cls)=>{
+    const sorted = [...e.offers].sort((a,b)=>a.price-b.price);
+    const best = sorted[0].price;
+    const inCart = db.cart.find(c=>cat.lookup.get(normKey(c.name,c.spec))===cat.lookup.get(normKey(e.name,e.spec)));
+    const chips = sorted.map(o=>{
+      const v = vendorOf(o.wh);
+      chipData.push({name:e.name, spec:e.spec, whId:o.wh.id, vlabel:(v?v.name:'?')+' · '+o.wh.name});
+      const pinned = inCart && inCart.whId===o.wh.id;
+      return `<span class="offer${o.price===best?' best':''}${pinned?' pinned':''}" data-pin="${chipData.length-1}" title="Click to add THIS offer to the cart (pins the item to this warehouse)">${pinned?'<span class="pinbadge">📌 IN CART</span>':(o.price===best?'<span class="badge">BEST</span>':'')}<span class="p">${money(o.price)}</span><span class="v">${esc(v?v.name:'?')} · ${esc(o.wh.name)}${o.code?' · '+esc(o.code):''}</span></span>`;
+    }).join('');
+    return `<tr class="${cls}">
+      <td style="min-width:160px"><div class="prodname">${esc(e.name)}</div><div class="prodspec">${esc(e.spec)}</div></td>
+      <td><div class="offers">${chips}</div></td>
+      <td style="white-space:nowrap;text-align:right">
+        <button class="small ${inCart?'':'primary'}" data-addcart="${esc(e.name)}∷${esc(e.spec)}">${inCart?`In cart (${inCart.qty}) +`:'＋ Add to cart'}</button>
+      </td></tr>`;
+  };
+
+  // ---- collapse same-name products (different doses) into subgroups ----
+  const baseKey = e => looksLikeCode(e.name) ? (nameNorm(String(e.name).replace(/\d+$/,'')) || nameNorm(e.name)) : nameNorm(e.name);
+  const gmap = new Map();
+  for(const e of entries.slice(0,300)){
+    const k = baseKey(e);
+    if(!gmap.has(k)) gmap.set(k, []);
+    gmap.get(k).push(e);
+  }
+  const autoExpand = q && gmap.size<=5;
+  let rows = '';
+  for(const [k, list] of gmap){
+    if(list.length===1){ rows += rowFor(list[0], ''); continue; }
+    list.sort((a,b)=>(parseNum(a.spec)||0)-(parseNum(b.spec)||0));
+    const label = list.reduce((a,b)=>nameScore(a)>=nameScore(b)?a:b).name;
+    const prices = list.flatMap(e=>e.offers.map(o=>o.price));
+    const lo = Math.min(...prices), hi = Math.max(...prices);
+    const nInCart = list.reduce((s,e)=>{ const c = db.cart.find(x=>cat.lookup.get(normKey(x.name,x.spec))===cat.lookup.get(normKey(e.name,e.spec))); return s+(c?c.qty:0); },0);
+    const open = expandedGroups.has(k) || autoExpand;
+    rows += `<tr class="ghead${open?' open':''}" data-grp="${esc(k)}"><td colspan="3">
+      <span class="caret">▶</span><strong>${esc(label)}</strong>
+      <span class="gmeta">${list.length} doses · ${money(lo)}–${money(hi)}${nInCart?` · <span style="color:var(--accent2)">${nInCart} in cart</span>`:''} · click to ${open?'collapse':'expand'}</span>
+    </td></tr>`;
+    if(open) rows += list.map(e=>rowFor(e,'gchild')).join('');
+  }
+  el.innerHTML = `<table><thead><tr><th>Product</th><th>Prices by warehouse (lowest first — click a price to buy from that specific vendor)</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.querySelectorAll('tr.ghead').forEach(tr=>tr.onclick=()=>{
+    const k = tr.dataset.grp;
+    if(expandedGroups.has(k)) expandedGroups.delete(k); else expandedGroups.add(k);
+    renderResults();
+  });
+  el.querySelectorAll('[data-addcart]').forEach(b=>b.onclick=()=>{
+    const [name,spec] = b.dataset.addcart.split('∷');
+    const grp = cat.lookup.get(normKey(name,spec));
+    const ex = db.cart.find(c=>cat.lookup.get(normKey(c.name,c.spec))===grp);
+    if(ex) ex.qty++; else db.cart.push({name, spec, qty:1});
+    save(); renderResults(); renderCartCount(); toast('Added to cart');
+  });
+  el.querySelectorAll('[data-pin]').forEach(s=>s.onclick=()=>{
+    const d = chipData[+s.dataset.pin];
+    const grp = cat.lookup.get(normKey(d.name, d.spec));
+    const ex = db.cart.find(c=>cat.lookup.get(normKey(c.name,c.spec))===grp);
+    if(ex){
+      if(ex.whId===d.whId){ delete ex.whId; toast('Unpinned — optimizer will pick the cheapest'); }
+      else { ex.whId = d.whId; toast('Pinned to '+d.vlabel); }
+    } else {
+      db.cart.push({name:d.name, spec:d.spec, qty:1, whId:d.whId});
+      toast('Added — pinned to '+d.vlabel);
+    }
+    save(); renderResults(); renderCartCount();
+  });
+}
+const expandedGroups = new Set(); // per-session; groups default to collapsed
+let searchTimer;
+$('#searchInput').addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(renderResults,150); });
+$('#vendorFilter').addEventListener('change', renderResults);
+function refreshVendorFilter(){
+  const sel = $('#vendorFilter'), cur = sel.value;
+  sel.innerHTML = '<option value="">All vendors</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
+  if([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+}
+
+/* ============ cart & optimizer ============ */
+let selectedPlanWh = null; // warehouse id when the user picks a single-vendor plan; null = optimizer best split
+function renderCartCount(){
+  const n = db.cart.reduce((s,c)=>s+c.qty,0);
+  const el = $('#cartCount');
+  el.style.display = n?'':'none'; el.textContent = n;
+}
+
+function shippingFor(wh, subtotal){
+  if(wh.shippingCost==null) return 0;
+  if(wh.freeShipOver!=null && subtotal>=wh.freeShipOver) return 0;
+  return wh.shippingCost;
+}
+
+/* Find the cheapest way to buy the cart, allowing splits across warehouses.
+   Enumerates warehouse subsets (≤14 warehouses) — items go to the cheapest
+   in-subset offer; shipping + free-ship thresholds + minimum orders respected. */
+function optimize(){
+  const cat = buildCatalog();
+  const cart = db.cart.map(c=>{
+    let offers = (cat.lookup.get(normKey(c.name,c.spec))||{offers:[]}).offers;
+    if(c.whId){ const pinned = offers.filter(o=>o.wh.id===c.whId); if(pinned.length) offers = pinned; }
+    return {...c, key:normKey(c.name,c.spec), offers};
+  });
+  const whSet = new Map();
+  cart.forEach(c=>c.offers.forEach(o=>whSet.set(o.wh.id, o.wh)));
+  const whs = [...whSet.values()];
+  const evalSubset = (list)=>{
+    const assign = new Map(); // whId -> {wh, lines:[{item, offer}], subtotal}
+    let covered = 0, itemsTotal = 0;
+    for(const c of cart){
+      const av = c.offers.filter(o=>list.includes(o.wh));
+      if(!av.length) continue;
+      const best = av.reduce((a,b)=>a.price<=b.price?a:b);
+      covered++;
+      itemsTotal += best.price*c.qty;
+      if(!assign.has(best.wh.id)) assign.set(best.wh.id, {wh:best.wh, lines:[], subtotal:0});
+      const a = assign.get(best.wh.id);
+      a.lines.push({item:c, offer:best}); a.subtotal += best.price*c.qty;
+    }
+    let ship = 0, minOk = true;
+    for(const a of assign.values()){
+      ship += shippingFor(a.wh, a.subtotal);
+      if(a.wh.minOrder!=null && a.subtotal < a.wh.minOrder) minOk = false;
+    }
+    return {assign, covered, total:itemsTotal+ship, ship, itemsTotal, minOk};
+  };
+  let best = null;
+  const consider = r=>{
+    if(!r.assign.size) return;
+    if(!best){ best = r; return; }
+    // prefer: more coverage > min-order satisfied > lower total
+    if(r.covered!==best.covered){ if(r.covered>best.covered) best=r; return; }
+    if(r.minOk!==best.minOk){ if(r.minOk) best=r; return; }
+    if(r.total<best.total) best=r;
+  };
+  if(whs.length && whs.length<=14){
+    const n = whs.length;
+    for(let mask=1; mask<(1<<n); mask++){
+      const list = []; for(let i=0;i<n;i++) if(mask&(1<<i)) list.push(whs[i]);
+      consider(evalSubset(list));
+    }
+  } else if(whs.length){
+    consider(evalSubset(whs));
+  }
+  // per-single-warehouse comparison cards (with the exact items that vendor lacks)
+  const singles = whs.map(w=>{ const r = evalSubset([w]);
+    return {wh:w, ...r, missing:cart.length-r.covered, missingItems:cart.filter(c=>!c.offers.some(o=>o.wh.id===w.id))}; });
+  return {best, singles, cart};
+}
+
+function renderCart(){
+  const body = $('#cartBody');
+  if(!db.cart.length){ body.innerHTML = '<div class="empty">Cart is empty — search a peptide and click “Add to cart”.</div>'; return; }
+  const {best, singles, cart} = optimize();
+  let html = cart.map((c,i)=>{
+    let pinNote = '';
+    if(c.whId){
+      const w = db.warehouses.find(x=>x.id===c.whId);
+      const v = w && vendorOf(w);
+      pinNote = w ? `<div style="font-size:12px;color:var(--accent2)">📌 pinned to ${esc(v?v.name:'?')} · ${esc(w.name)} <button class="small" data-unpin="${i}" style="font-size:11px;padding:1px 7px">Unpin</button></div>` : '';
+    }
+    return `
+    <div class="cartitem">
+      <div class="n"><strong>${esc(c.name)}</strong> <span class="prodspec">${esc(c.spec)}</span>
+        ${!c.offers.length?'<span style="color:var(--danger);font-size:12px"> — no vendor stocks this</span>':''}${pinNote}</div>
+      <input type="number" min="1" value="${c.qty}" data-qty="${i}">
+      <button class="small danger" data-rm="${i}">✕</button>
+    </div>`;}).join('');
+
+  const sel = selectedPlanWh ? singles.find(s=>s.wh.id===selectedPlanWh && s.covered>0) : null;
+  const plan = sel || best;
+  if(plan && plan.assign.size){
+    const selV = sel ? vendorOf(sel.wh) : null;
+    html += `<div class="plan"><h4>${sel
+      ? `✓ Everything from ${esc(selV?selV.name:'?')} · ${esc(sel.wh.name)} — ${money(sel.total)} total (items ${money(sel.itemsTotal)} + shipping ${money(sel.ship)}) <button class="small" id="backToBest" style="margin-left:8px">← Back to best split</button>`
+      : `✓ Best plan — ${money(best.total)} total (items ${money(best.itemsTotal)} + shipping ${money(best.ship)})${best.covered<cart.length?` — ${cart.length-best.covered} item(s) unavailable`:''}${!best.minOk?' — ⚠ a minimum order is not met':''}`}</h4>`;
+    if(sel && sel.missingItems.length){
+      html += `<div style="color:var(--danger);font-size:13px;margin-bottom:10px">⚠ Not available from this vendor: ${sel.missingItems.map(m=>`<strong>${esc(m.name)}${m.spec?' '+esc(m.spec):''}</strong>`).join(', ')} — order these elsewhere or remove them.</div>`;
+    }
+    if(sel && sel.wh.minOrder!=null && sel.itemsTotal<sel.wh.minOrder){
+      html += `<div style="color:var(--danger);font-size:13px;margin-bottom:10px">⚠ Below this vendor's ${money(sel.wh.minOrder)} minimum order.</div>`;
+    }
+    for(const a of plan.assign.values()){
+      const v = vendorOf(a.wh);
+      const ship = shippingFor(a.wh, a.subtotal);
+      const msg = buildWaMessage(a);
+      const link = v && v.phone ? waLink(v.phone, msg) : null;
+      html += `<div class="planwh">
+        <div class="whn">${esc(v?v.name:'?')} — ${esc(a.wh.name)} · items ${money(a.subtotal)} + shipping ${ship?money(ship):'FREE'}
+        ${a.wh.minOrder!=null&&a.subtotal<a.wh.minOrder?`<span style="color:var(--danger)"> · below ${money(a.wh.minOrder)} minimum</span>`:''}</div>
+        <div class="msgbox">${esc(msg)}</div>
+        <button class="small" data-copy="${encodeURIComponent(msg)}">Copy message</button>
+        ${link?`<a href="${link}" target="_blank"><button class="small primary">🟢 Open WhatsApp</button></a>`:'<span class="hint">no WhatsApp number on vendor</span>'}
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '<h4 style="margin-top:18px">Buy everything from one vendor instead <span class="hint" style="font-weight:400">— click a card to plan the whole order from that vendor</span></h4><div class="vendorcards">';
+  const ranked = singles.filter(s=>s.covered>0).sort((a,b)=> (b.covered-a.covered) || (a.total-b.total));
+  const fullBest = ranked.find(s=>s.missing===0);
+  for(const s of ranked){
+    const v = vendorOf(s.wh);
+    const missNames = s.missingItems.map(m=>m.name+(m.spec?' '+m.spec:''));
+    const shown = missNames.slice(0,3).map(esc).join(', ') + (missNames.length>3?` +${missNames.length-3} more`:'');
+    html += `<div class="vcost${fullBest&&s===fullBest?' cheapest':''}${sel&&sel.wh.id===s.wh.id?' selected':''}" data-selwh="${s.wh.id}" title="Click to plan the whole order from this vendor">
+      <div class="vn">${esc(v?v.name:'?')} · ${esc(s.wh.name)}${fullBest&&s===fullBest?'<span class="chip">CHEAPEST</span>':''}${sel&&sel.wh.id===s.wh.id?'<span class="chip" style="background:rgba(249,115,22,.15);color:var(--accent2)">SELECTED</span>':''}</div>
+      <div class="sub">Subtotal: ${money(s.itemsTotal)}<br>+ Shipping ${s.ship?money(s.ship):(s.wh.shippingCost==null?'—':'FREE')}</div>
+      <div class="tot">${money(s.total)}${s.missing?`<span class="hint" style="font-size:12px;font-weight:400"> for ${s.covered}/${cart.length} items</span>`:''}</div>
+      ${s.missing?`<div class="miss" title="${esc(missNames.join(', '))}">Missing ${s.missing}: ${shown}</div>`:''}
+      ${s.wh.minOrder!=null&&s.itemsTotal<s.wh.minOrder?`<div class="miss" style="color:var(--danger)">Below ${money(s.wh.minOrder)} minimum</div>`:''}
+    </div>`;
+  }
+  html += '</div>';
+  body.innerHTML = html;
+  body.querySelectorAll('[data-qty]').forEach(inp=>inp.onchange=()=>{ db.cart[+inp.dataset.qty].qty = Math.max(1, parseInt(inp.value)||1); save(); renderCart(); renderCartCount(); });
+  body.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ db.cart.splice(+b.dataset.rm,1); save(); renderCart(); renderCartCount(); renderResults(); });
+  body.querySelectorAll('[data-unpin]').forEach(b=>b.onclick=()=>{ delete db.cart[+b.dataset.unpin].whId; save(); renderCart(); renderResults(); });
+  body.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{ navigator.clipboard.writeText(decodeURIComponent(b.dataset.copy)).then(()=>toast('Copied')); });
+  body.querySelectorAll('[data-selwh]').forEach(c=>c.onclick=()=>{
+    selectedPlanWh = selectedPlanWh===c.dataset.selwh ? null : c.dataset.selwh;
+    renderCart();
+  });
+  const bb = body.querySelector('#backToBest');
+  if(bb) bb.onclick = ()=>{ selectedPlanWh=null; renderCart(); };
+}
+
+function buildWaMessage(a){
+  const lines = a.lines.map(l=>`${l.offer.code||l.item.name+' '+l.item.spec} — Qty: ${l.item.qty}${l.offer.code?` (${l.item.name} ${l.item.spec})`:''}`);
+  return `Hi, I would like to order the following:\n\n${lines.join('\n')}\n\nPlease confirm total pricing with shipping and availability.\n\nThank you!`;
+}
+
+$('#cartBtn').onclick = ()=>{ renderCart(); $('#cartOverlay').classList.add('open'); };
+$('#cartClose').onclick = ()=>$('#cartOverlay').classList.remove('open');
+$('#cartClear').onclick = ()=>{ if(confirm('Clear cart?')){ db.cart=[]; save(); renderCart(); renderCartCount(); renderResults(); } };
+
+/* ============ settings / export / import ============ */
+$('#settingsBtn').onclick = ()=>{ $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||'claude-sonnet-5'; $('#setOverlay').classList.add('open'); };
+$('#setCancel').onclick = ()=>$('#setOverlay').classList.remove('open');
+$('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; save(); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
+
+$('#exportBtn').onclick = ()=>{
+  const clean = JSON.parse(JSON.stringify(db)); clean.settings = {model:db.settings.model}; // never export API key
+  const blob = new Blob([JSON.stringify(clean,null,2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download = 'peptide-compare-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+};
+$('#importBtn').onclick = ()=>$('#importFile').click();
+$('#importFile').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return;
+  f.text().then(t=>{
+    try{ const d = JSON.parse(t);
+      if(!d.vendors || !d.warehouses) throw new Error('not a backup file');
+      const key = db.settings.apiKey;
+      db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[];
+      save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
+    }catch(err){ toast('Import failed: '+err.message); }
+  });
+  e.target.value='';
+};
+
+// close overlays on backdrop click
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('open'); }));
+
+/* ============ init ============ */
+function renderAll(){ renderVendors(); refreshUploadSelects(); refreshVendorFilter(); renderResults(); renderCartCount(); }
+renderAll();
+//JS-END
+</script>
+</body>
+</html>

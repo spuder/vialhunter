@@ -1,0 +1,15 @@
+Warehouse 2,,,
+Shipping Cost,$60,,
+Minimum Order,$200,,
+Upload Date,7/1/2026,,
+Code,Name,Specification,Price
+SM5,Semaglutide,5mg,$70
+SM10,Semaglutide,10mg,$115
+RT5,Retatrutide,5mg,$68
+RT10,Retatrutide,10mg,$104
+RT20,Retatrutide,20mg,$130
+KS5,Kisspeptin-10,5mg,$58
+KS10,Kisspeptin-10,10mg,$100
+TSM10,Tesamorelin,10mg,$145
+BPC10,BPC-157,10mg,$45
+IP5,Ipamorelin,5mg,$38
