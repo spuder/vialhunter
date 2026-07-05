@@ -145,7 +145,8 @@ tr.gchild td:first-child{padding-left:32px}
 .planwh{margin-bottom:14px}
 .planwh .whn{font-weight:700}
 .msgbox{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;margin:6px 0;max-height:180px;overflow:auto}
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:10px;padding:10px 18px;z-index:200;display:none}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:10px;padding:10px 18px;z-index:200;display:none;align-items:center;max-width:min(720px,90vw);word-break:break-word}
+.toast.err{border-color:var(--danger);box-shadow:0 4px 24px rgba(248,113,113,.15)}
 .empty{border:1px dashed var(--border);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -296,7 +297,15 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;
 function money(n){ return '$' + (+n).toFixed(2).replace(/\.00$/,''); }
 function digits(p){ return String(p||'').replace(/[^0-9]/g,''); }
 function waLink(p, text){ const d = digits(p); if(!d) return null; return 'https://wa.me/'+d+(text?'?text='+encodeURIComponent(text):''); }
-function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none',2600); }
+function toast(m, sticky){
+  const t=$('#toast');
+  t.classList.toggle('err', !!sticky);
+  t.innerHTML = `<span>${esc(m)}</span>` + (sticky ? `<button class="small" onclick="this.parentNode.style.display='none'" style="margin-left:12px;flex-shrink:0">✕ Dismiss</button>` : '');
+  t.style.display='flex';
+  clearTimeout(t._h);
+  if(!sticky) t._h=setTimeout(()=>t.style.display='none',2600); // errors stay until dismissed
+}
+function toastErr(m){ toast(m, true); }
 function vendorOf(wh){ return db.vendors.find(v=>v.id===wh.vendorId); }
 
 /* ============ vendors ============ */
@@ -520,7 +529,7 @@ function handleFile(file){
     r.readAsArrayBuffer(file);
   } else if(ext==='pdf'){
     extractPdf(file);
-  } else toast('Unsupported file type: '+ext);
+  } else toastErr('Unsupported file type: .'+ext+' — drop a CSV, XLSX, or PDF');
 }
 
 function parseNum(v){
@@ -585,7 +594,7 @@ function extractFromGrid(grid){
 let pendingUpload = null; // {items, shipping, freeOver, minOrder, date, source}
 function gridToReview(grid, source){
   const ex = extractFromGrid(grid);
-  if(!ex.items.length){ toast('No price rows found — check the file format'); return; }
+  if(!ex.items.length){ toastErr('No price rows found in '+source+' — expected columns like Code / Name / Specification / Price'); return; }
   openReview(ex, source);
 }
 
@@ -643,7 +652,7 @@ function currentTargetWh(){
 /* ============ PDF via Claude API ============ */
 async function extractPdf(file){
   const key = db.settings.apiKey;
-  if(!key){ toast('PDF extraction needs a Claude API key — add one in ⚙ Settings'); $('#setOverlay').classList.add('open'); return; }
+  if(!key){ toastErr('PDF extraction needs a Claude API key — add one in ⚙ Settings'); $('#setOverlay').classList.add('open'); return; }
   dz.innerHTML = '<div><span class="spin"></span>Extracting prices from PDF with Claude…</div>';
   try{
     const b64 = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(file); });
@@ -664,17 +673,26 @@ async function extractPdf(file){
         ]}]
       })
     });
-    if(!resp.ok){ const t = await resp.text(); throw new Error('API '+resp.status+': '+t.slice(0,200)); }
+    if(!resp.ok){
+      const t = await resp.text();
+      let detail = t.slice(0,300);
+      try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message; }catch(_){}
+      throw new Error('API returned '+resp.status+' — '+detail+(resp.status===404?' (check the model name in ⚙ Settings)':resp.status===401?' (check your API key in ⚙ Settings)':''));
+    }
     const data = await resp.json();
     let text = (data.content||[]).map(b=>b.text||'').join('');
     text = text.replace(/^```(json)?/m,'').replace(/```\s*$/m,'').trim();
     const start = text.indexOf('{');
-    const parsed = JSON.parse(text.slice(start, text.lastIndexOf('}')+1));
+    if(start<0) throw new Error('Model returned no JSON. Its reply began: “'+text.slice(0,160)+'…”');
+    let parsed;
+    try{ parsed = JSON.parse(text.slice(start, text.lastIndexOf('}')+1)); }
+    catch(e){ throw new Error('Could not parse the model\'s reply ('+e.message+'). It began: “'+text.slice(0,160)+'…”'); }
     const items = (parsed.items||[]).map(it=>({code:it.code||'', name:it.name||'', spec:it.spec||'', price:parseNum(it.price)})).filter(it=>it.name&&it.price!=null);
-    if(!items.length) throw new Error('No items found in PDF');
+    if(!items.length) throw new Error('The model found no product/price rows in this PDF');
     openReview({items, shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null}, file.name);
   }catch(err){
-    toast('PDF extraction failed: '+err.message);
+    console.error('PDF extraction error:', err);
+    toastErr('PDF extraction failed — '+err.message);
   }finally{
     resetDropZone();
   }
@@ -1015,7 +1033,7 @@ function exportPayload(){
 }
 $('#exportBtn').onclick = ()=>{
   const json = exportPayload();
-  if(json===null){ toast('⚠ Export blocked: your API key appears inside the data. Remove it from whatever field it was pasted into.'); return; }
+  if(json===null){ toastErr('⚠ Export blocked: your API key appears inside the data. Remove it from whatever field it was pasted into.'); return; }
   const blob = new Blob([json], {type:'application/json'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download = 'vialhunter-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
@@ -1030,7 +1048,7 @@ $('#importFile').onchange = e=>{
       const key = db.settings.apiKey;
       db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[];
       save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
-    }catch(err){ toast('Import failed: '+err.message); }
+    }catch(err){ toastErr('Import failed: '+err.message); }
   });
   e.target.value='';
 };
