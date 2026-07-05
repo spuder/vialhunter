@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Peptide Price Compare</title>
+<title>VialHunter — Peptide Price Compare</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='7.5' y='1.5' width='9' height='3.5' rx='1.2' fill='%238b91a5'/%3E%3Cpath d='M9.5 5.5v9.7a2.5 2.5 0 0 0 5 0V5.5' fill='none' stroke='%23e8eaf0' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M9.5 11h5v4.2a2.5 2.5 0 0 1-5 0z' fill='%23f97316'/%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -26,7 +27,7 @@ button.danger{color:var(--danger)}
 input,select,textarea{font:inherit;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 header{position:sticky;top:0;z-index:50;background:rgba(15,17,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-header .logo{font-weight:800;font-size:17px;white-space:nowrap}
+header .logo{font-weight:800;font-size:17px;white-space:nowrap;display:flex;align-items:center;gap:7px}
 header .logo span{color:var(--accent)}
 #searchBar{flex:1;min-width:220px;max-width:640px;position:relative}
 #searchInput{width:100%;padding:10px 14px 10px 38px;border-radius:10px;font-size:15px}
@@ -135,7 +136,7 @@ tr.gchild td:first-child{padding-left:32px}
 </head>
 <body>
 <header>
-  <div class="logo">Peptide<span>Compare</span></div>
+  <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="7.5" y="1.5" width="9" height="3.5" rx="1.2" fill="#8b91a5"/><path d="M9.5 5.5v9.7a2.5 2.5 0 0 0 5 0V5.5" fill="none" stroke="#e8eaf0" stroke-width="1.6" stroke-linecap="round"/><path d="M9.5 11h5v4.2a2.5 2.5 0 0 1-5 0z" fill="#f97316"/></svg>Vial<span>Hunter</span></div>
   <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
   <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
   <button id="cartBtn">🛒 Cart<span id="cartCount" style="display:none">0</span></button>
@@ -261,10 +262,12 @@ tr.gchild td:first-child{padding-left:32px}
 <script>
 //JS-START
 /* ============ state ============ */
-const DBKEY = 'peptideCompareDB_v1';
+const DBKEY = 'vialhunterDB_v1';
+const OLDKEY = 'peptideCompareDB_v1'; // pre-rename data, migrated on first load
 let db = load();
 function load(){
   try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors) return d; }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
   return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
 }
 function save(){ localStorage.setItem(DBKEY, JSON.stringify(db)); }
@@ -944,7 +947,7 @@ $('#exportBtn').onclick = ()=>{
   const clean = JSON.parse(JSON.stringify(db)); clean.settings = {model:db.settings.model}; // never export API key
   const blob = new Blob([JSON.stringify(clean,null,2)], {type:'application/json'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download = 'peptide-compare-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  a.download = 'vialhunter-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 };
 $('#importBtn').onclick = ()=>$('#importFile').click();
 $('#importFile').onchange = e=>{
