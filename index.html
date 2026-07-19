@@ -90,8 +90,9 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 #orderGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:26px}
 .ordcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .ordhead{display:flex;gap:12px;align-items:center}
-.ordphoto{width:56px;height:56px;border-radius:12px;background:var(--panel2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);overflow:hidden;flex-shrink:0;cursor:pointer}
+.ordphoto{position:relative;width:56px;height:56px;border-radius:12px;background:var(--panel2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);overflow:hidden;flex-shrink:0;cursor:pointer}
 .ordphoto img{width:100%;height:100%;object-fit:cover}
+.ordphoto .pcount{position:absolute;bottom:1px;right:1px;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;border-radius:5px;padding:0 3px}
 .ordname{font-weight:700;font-size:15px}
 .ordmeta{color:var(--muted);font-size:13px}
 .ordfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
@@ -146,6 +147,16 @@ tr.gchild td:first-child{padding-left:32px}
 .photodrop{width:84px;height:84px;border-radius:14px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;overflow:hidden;flex-shrink:0}
 .photodrop img{width:100%;height:100%;object-fit:cover}
 .photodrop.dragover{border-color:var(--accent)}
+
+/* multi-file strips (order photos / COAs) */
+.filestrip{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;border-radius:12px;transition:outline-color .12s}
+.filestrip.dragover{outline:2px dashed var(--accent);outline-offset:4px}
+.filetile{position:relative;width:64px;height:64px;border-radius:10px;background:var(--panel2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:10px;color:var(--muted);text-align:center;flex-shrink:0}
+.filetile img{width:100%;height:100%;object-fit:cover}
+.filetile.doc span{padding:2px;line-height:1.3;word-break:break-word}
+.filetile .rm{position:absolute;top:1px;right:1px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;cursor:pointer;padding:0}
+.filetile.add{cursor:pointer;font-size:24px;border-style:dashed}
+.filetile.add:hover{border-color:var(--accent);color:var(--text)}
 
 /* review table */
 #reviewTable td input{width:100%;padding:4px 6px;font-size:13px;border-radius:5px}
@@ -271,28 +282,34 @@ tr.gchild td:first-child{padding-left:32px}
 <div class="overlay" id="orderOverlay"><div class="modal">
   <h3 id="ordTitle">Add order</h3>
   <div class="frow">
-    <div class="photodrop" id="ordPhoto" title="Drop or click to attach a receipt/screenshot"><span>📷</span></div>
-    <div style="flex:3">
-      <div class="frow">
-        <div><label>Vendor (optional)</label><select id="ordVendor"><option value="">—</option></select></div>
-        <div><label>Carrier</label><select id="ordCarrier">
-          <option>FedEx</option><option>UPS</option><option>USPS</option><option>DHL</option><option>Other</option>
-        </select></div>
-      </div>
-      <div class="frow">
-        <div><label>Tracking number</label><input id="ordTracking" placeholder="1Z999AA10123456784"></div>
-      </div>
-      <div class="frow">
-        <div><label>Payment amount ($)</label><input id="ordAmount" type="number" step="0.01" placeholder="150.00"></div>
-        <div><label>Payment method</label><input id="ordMethod" placeholder="Zelle, Venmo, Crypto…"></div>
-      </div>
-    </div>
+    <div><label>Vendor (optional)</label><select id="ordVendor"><option value="">—</option></select></div>
+    <div><label>Contacted via</label><select id="ordContact" disabled><option value="">—</option></select></div>
+    <div><label>Carrier</label><select id="ordCarrier">
+      <option>FedEx</option><option>UPS</option><option>USPS</option><option>DHL</option><option>Other</option>
+    </select></div>
   </div>
+  <div class="frow">
+    <div><label>Tracking number</label><input id="ordTracking" placeholder="1Z999AA10123456784"></div>
+    <div><label>Payment amount ($)</label><input id="ordAmount" type="number" step="0.01" placeholder="150.00"></div>
+    <div><label>Payment method</label><input id="ordMethod" placeholder="Zelle, Venmo, Crypto…"></div>
+  </div>
+
+  <div class="frow"><div>
+    <label>Photos — receipts, screenshots (multiple allowed)</label>
+    <div class="filestrip" id="ordPhotoStrip"></div>
+  </div></div>
+  <input type="file" id="ordPhotoFile" accept="image/*" multiple style="display:none">
+
+  <div class="frow"><div>
+    <label>COAs — Certificate of Analysis (PDF or image, multiple allowed)</label>
+    <div class="filestrip" id="ordCoaStrip"></div>
+  </div></div>
+  <input type="file" id="ordCoaFile" accept=".pdf,image/*" multiple style="display:none">
+
   <div class="frow"><div>
     <label>Progress — click a step to mark it reached</label>
     <div class="stepper" id="ordStepper"></div>
   </div></div>
-  <input type="file" id="ordPhotoFile" accept="image/*" style="display:none">
   <div class="mfoot">
     <button id="ordCancel">Cancel</button>
     <button class="primary" id="ordSave">Save order</button>
@@ -377,6 +394,16 @@ if(Array.isArray(db.orders)){
   if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
   delete db.orders; save();
 }
+// One-time migration: single `photo` field -> `photos` array (multi-photo support).
+(function migrateOrderPhotos(){
+  let changed = false;
+  ordersDb.orders.forEach(o=>{
+    if(o.photo && !o.photos){ o.photos = [{name:'photo', data:o.photo}]; delete o.photo; changed = true; }
+    if(!o.photos){ o.photos = []; changed = true; }
+    if(!o.coas){ o.coas = []; changed = true; }
+  });
+  if(changed) saveOrders();
+})();
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function $(s){ return document.querySelector(s); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -619,6 +646,40 @@ function trackingUrl(carrier, num){
   if(c==='dhl') return 'https://www.dhl.com/us-en/home/tracking.html?tracking-id='+n;
   return null;
 }
+
+/* A vendor may have a company number plus several employee numbers; an order
+   remembers WHICH one was actually used ("contactRef": 'company' or 'c<index>
+   into vendor.contacts') so its WhatsApp button messages the right person
+   instead of always defaulting to the company line. */
+function contactOptions(vendor){
+  if(!vendor) return [];
+  const opts = [];
+  if(vendor.phone) opts.push({value:'company', label:vendor.name+' (company) — '+vendor.phone, phone:vendor.phone, name:vendor.name});
+  (vendor.contacts||[]).forEach((c,i)=>{ if(c.phone) opts.push({value:'c'+i, label:(c.name||'Contact '+(i+1))+' — '+c.phone, phone:c.phone, name:c.name||vendor.name}); });
+  return opts;
+}
+function populateContactSelect(vendorId, selected){
+  const sel = $('#ordContact');
+  const vendor = vendorId ? db.vendors.find(x=>x.id===vendorId) : null;
+  const opts = contactOptions(vendor);
+  if(!opts.length){ sel.innerHTML = '<option value="">—</option>'; sel.disabled = true; return; }
+  sel.disabled = false;
+  sel.innerHTML = opts.map(o=>`<option value="${o.value}">${esc(o.label)}</option>`).join('');
+  sel.value = opts.some(o=>o.value===selected) ? selected : opts[0].value;
+}
+function resolveOrderContact(o){
+  if(!o.vendorId) return null;
+  const vendor = db.vendors.find(x=>x.id===o.vendorId);
+  if(!vendor) return null;
+  const opts = contactOptions(vendor);
+  const match = opts.find(x=>x.value===o.contactRef);
+  return match || opts[0] || null;
+}
+function readFileRaw(file, cb){
+  const r = new FileReader();
+  r.onload = ()=>cb({name:file.name, data:r.result, type:file.type||''});
+  r.readAsDataURL(file);
+}
 function stepperHtml(order, idPrefix){
   const cur = stageIndex(order.status);
   return ORDER_STAGES.map((s,i)=>{
@@ -643,18 +704,23 @@ function renderOrders(){
   for(const o of ordersDb.orders){
     const vendor = o.vendorId ? db.vendors.find(v=>v.id===o.vendorId) : null;
     const trackUrl = trackingUrl(o.carrier, o.trackingNumber);
+    const photos = o.photos || [];
+    const coas = o.coas || [];
+    const contact = resolveOrderContact(o);
     const card = document.createElement('div');
     card.className = 'ordcard';
     card.innerHTML = `
       <div class="ordhead">
-        <div class="ordphoto" data-ordphoto="${o.id}" title="Click to attach/replace photo">${o.photo?`<img src="${o.photo}">`:'📦'}</div>
+        <div class="ordphoto" data-editord="${o.id}" title="${photos.length?'View/edit photos':'Add photos'}">${photos.length?`<img src="${photos[0].data}">${photos.length>1?`<span class="pcount">+${photos.length-1}</span>`:''}`:'📦'}</div>
         <div>
           <div class="ordname">${vendor?esc(vendor.name):'Order'}${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank">${esc(o.trackingNumber)}</a>`:esc(o.trackingNumber)}</span>`:''}</div>
           <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${o.createdAt?' · '+esc(o.createdAt):''}</div>
+          ${coas.length?`<div class="ordmeta">COA: ${coas.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
         </div>
       </div>
       <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(o, o.id)}</div>
       <div class="ordfoot">
+        <button class="small" data-wa="${o.id}" ${contact?'':'disabled'} title="${contact?'Message '+esc(contact.name)+' on WhatsApp':'No WhatsApp number on file for this vendor'}">💬 WhatsApp</button>
         <button class="small" data-editord="${o.id}">Edit</button>
         <button class="small danger" data-delord="${o.id}">✕</button>
       </div>`;
@@ -669,13 +735,12 @@ function renderOrders(){
   g.querySelectorAll('[data-editord]').forEach(b=>b.onclick=()=>openOrderModal(b.dataset.editord));
   g.querySelectorAll('[data-delord]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this order?')){
     ordersDb.orders = ordersDb.orders.filter(o=>o.id!==b.dataset.delord); saveOrders(); renderOrders(); }});
-  g.querySelectorAll('[data-ordphoto]').forEach(el=>{
-    el.onclick = ()=>{
-      const o = ordersDb.orders.find(x=>x.id===el.dataset.ordphoto);
-      const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
-      inp.onchange = ()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ o.photo=d; saveOrders(); renderOrders(); }); };
-      inp.click();
-    };
+  g.querySelectorAll('[data-wa]').forEach(b=>{
+    const o = ordersDb.orders.find(x=>x.id===b.dataset.wa);
+    const contact = resolveOrderContact(o);
+    if(!contact) return;
+    const msg = `Hi ${contact.name}, checking in on my order${o.trackingNumber?' (tracking '+o.trackingNumber+')':''}.`;
+    b.onclick = ()=>window.open(waLink(contact.phone, msg), '_blank');
   });
   g.querySelectorAll('[data-ordstepper]').forEach(el=>{
     const o = ordersDb.orders.find(x=>x.id===el.dataset.ordstepper);
@@ -688,20 +753,23 @@ function renderOrders(){
   });
 }
 
-let editingOrderId = null, ordPhotoData = null, ordEditStatus = 'ordered';
+let editingOrderId = null, ordEditStatus = 'ordered', ordPhotos = [], ordCoas = [];
 function openOrderModal(id){
-  editingOrderId = id; ordPhotoData = null;
+  editingOrderId = id;
   const o = id ? ordersDb.orders.find(x=>x.id===id) : null;
   $('#ordTitle').textContent = o ? 'Edit order' : 'Add order';
   const vsel = $('#ordVendor');
   vsel.innerHTML = '<option value="">—</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
   vsel.value = o ? (o.vendorId||'') : '';
+  populateContactSelect(vsel.value, o ? o.contactRef : null);
   $('#ordCarrier').value = o ? (o.carrier||'FedEx') : 'FedEx';
   $('#ordTracking').value = o ? (o.trackingNumber||'') : '';
   $('#ordAmount').value = o && o.paymentAmount!=null ? o.paymentAmount : '';
   $('#ordMethod').value = o ? (o.paymentMethod||'') : '';
-  $('#ordPhoto').innerHTML = o&&o.photo ? `<img src="${o.photo}">` : '<span>📷</span>';
-  if(o&&o.photo) ordPhotoData = o.photo;
+  ordPhotos = o && Array.isArray(o.photos) ? JSON.parse(JSON.stringify(o.photos)) : [];
+  ordCoas = o && Array.isArray(o.coas) ? JSON.parse(JSON.stringify(o.coas)) : [];
+  renderOrdPhotoStrip();
+  renderOrdCoaStrip();
   ordEditStatus = o ? (o.status||'ordered') : 'ordered';
   renderOrdStepperPreview();
   $('#orderOverlay').classList.add('open');
@@ -711,16 +779,57 @@ function renderOrdStepperPreview(){
   el.innerHTML = stepperHtml({status:ordEditStatus, stageDates:(editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).stageDates}, 'preview');
   wireSteppers(el, idx=>{ ordEditStatus = ORDER_STAGES[idx].key; renderOrdStepperPreview(); });
 }
+$('#ordVendor').onchange = ()=>populateContactSelect($('#ordVendor').value, null);
+
+function renderOrdPhotoStrip(){
+  const el = $('#ordPhotoStrip');
+  el.innerHTML = ordPhotos.map((p,i)=>`<div class="filetile"><img src="${p.data}"><button class="rm" type="button" data-rmphoto="${i}" title="Remove">✕</button></div>`).join('')
+    + `<div class="filetile add" id="ordPhotoAdd" title="Add photo(s)">+</div>`;
+  el.querySelectorAll('[data-rmphoto]').forEach(b=>b.onclick=()=>{ ordPhotos.splice(+b.dataset.rmphoto,1); renderOrdPhotoStrip(); });
+  $('#ordPhotoAdd').onclick = ()=>$('#ordPhotoFile').click();
+}
+function renderOrdCoaStrip(){
+  const el = $('#ordCoaStrip');
+  el.innerHTML = ordCoas.map((c,i)=>{
+    const isImg = (c.type||'').startsWith('image/');
+    const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
+    return `<div class="filetile doc" title="${esc(c.name)}">${isImg?`<img src="${c.data}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmcoa="${i}" title="Remove">✕</button></div>`;
+  }).join('') + `<div class="filetile add" id="ordCoaAdd" title="Add COA(s)">+</div>`;
+  el.querySelectorAll('[data-rmcoa]').forEach(b=>b.onclick=()=>{ ordCoas.splice(+b.dataset.rmcoa,1); renderOrdCoaStrip(); });
+  $('#ordCoaAdd').onclick = ()=>$('#ordCoaFile').click();
+}
+function addOrdPhotos(files){
+  Array.from(files).filter(f=>f.type.startsWith('image/')).forEach(f=>{
+    readImage(f, d=>{ ordPhotos.push({name:f.name, data:d}); renderOrdPhotoStrip(); });
+  });
+}
+function addOrdCoas(files){
+  Array.from(files).filter(f=>f.type==='application/pdf' || f.type.startsWith('image/')).forEach(f=>{
+    readFileRaw(f, item=>{ ordCoas.push(item); renderOrdCoaStrip(); });
+  });
+}
+$('#ordPhotoFile').onchange = e=>{ if(e.target.files.length) addOrdPhotos(e.target.files); e.target.value=''; };
+$('#ordCoaFile').onchange = e=>{ if(e.target.files.length) addOrdCoas(e.target.files); e.target.value=''; };
+[['#ordPhotoStrip', ()=>addOrdPhotos], ['#ordCoaStrip', ()=>addOrdCoas]].forEach(([sel, getAdd])=>{
+  const el = $(sel);
+  el.addEventListener('dragover', e=>{e.preventDefault(); el.classList.add('dragover');});
+  el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
+  el.addEventListener('drop', e=>{ e.preventDefault(); el.classList.remove('dragover');
+    if(e.dataTransfer.files.length) getAdd()(e.dataTransfer.files); });
+});
+
 $('#ordCancel').onclick = ()=>$('#orderOverlay').classList.remove('open');
 $('#ordSave').onclick = ()=>{
   const num = v => v===''?null:parseFloat(v);
   const data = {
     vendorId: $('#ordVendor').value || null,
+    contactRef: $('#ordContact').disabled ? null : ($('#ordContact').value || null),
     carrier: $('#ordCarrier').value,
     trackingNumber: $('#ordTracking').value.trim(),
     paymentAmount: num($('#ordAmount').value),
     paymentMethod: $('#ordMethod').value.trim(),
-    photo: ordPhotoData,
+    photos: ordPhotos,
+    coas: ordCoas,
     status: ordEditStatus
   };
   if(editingOrderId){
@@ -761,14 +870,6 @@ $('#ordersImportFile').onchange = e=>{
   });
   e.target.value='';
 };
-
-const ordp = $('#ordPhoto');
-ordp.onclick = ()=>$('#ordPhotoFile').click();
-$('#ordPhotoFile').onchange = e=>{ if(e.target.files[0]) readImage(e.target.files[0], d=>{ ordPhotoData=d; ordp.innerHTML=`<img src="${d}">`; }); };
-ordp.addEventListener('dragover', e=>{e.preventDefault(); ordp.classList.add('dragover');});
-ordp.addEventListener('dragleave', ()=>ordp.classList.remove('dragover'));
-ordp.addEventListener('drop', e=>{ e.preventDefault(); ordp.classList.remove('dragover');
-  const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('image/')) readImage(f, d=>{ ordPhotoData=d; ordp.innerHTML=`<img src="${d}">`; }); });
 
 /* ============ upload / parsing ============
    Every warehouse row and every vendor's "new warehouse" box is its own drop
