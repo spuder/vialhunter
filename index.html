@@ -40,6 +40,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 header{position:sticky;top:0;z-index:50;background:var(--headbg);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 header .logo{font-weight:800;font-size:17px;white-space:nowrap;display:flex;align-items:center;gap:7px}
 header .logo span{color:var(--accent)}
+.viewnav{display:flex;gap:4px}
+button.navtab{background:transparent;border-color:transparent;color:var(--muted)}
+button.navtab.active{background:var(--panel2);border-color:var(--border);color:var(--text);font-weight:600}
+#vendorHeaderActions{display:inline-flex;gap:12px;align-items:center}
 .searchrow{display:flex;gap:10px;align-items:center;margin:30px 0 4px}
 #searchBar{flex:1;min-width:220px;position:relative}
 #searchInput{width:100%;padding:10px 14px 10px 38px;border-radius:10px;font-size:15px}
@@ -177,30 +181,45 @@ tr.gchild td:first-child{padding-left:32px}
 <body>
 <header>
   <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="7.5" y="1.5" width="9" height="3.5" rx="1.2" fill="var(--muted)"/><path d="M9.5 5.5v9.7a2.5 2.5 0 0 0 5 0V5.5" fill="none" stroke="var(--text)" stroke-width="1.6" stroke-linecap="round"/><path d="M9.5 11h5v4.2a2.5 2.5 0 0 1-5 0z" fill="var(--accent)"/></svg>Vial<span>Hunter</span></div>
+  <nav class="viewnav">
+    <button id="navVendors" class="navtab active">🏪 Vendors</button>
+    <button id="navOrders" class="navtab">📦 Orders</button>
+  </nav>
   <div style="flex:1"></div>
-  <button id="cartBtn">🛒 Cart<span id="cartCount" style="display:none">0</span></button>
+  <span id="vendorHeaderActions">
+    <button id="cartBtn">🛒 Cart<span id="cartCount" style="display:none">0</span></button>
+    <button id="exportBtn" title="Download vendor/price data as JSON — shareable, contains no orders">Export</button>
+    <button id="importBtn" title="Restore vendor/price data from JSON">Import</button>
+    <input type="file" id="importFile" accept=".json" style="display:none">
+  </span>
   <button id="themeBtn" title="Toggle light / dark theme">☀</button>
   <button id="settingsBtn" title="Settings">⚙</button>
-  <button id="exportBtn" title="Download all data as JSON">Export</button>
-  <button id="importBtn" title="Restore from JSON">Import</button>
-  <input type="file" id="importFile" accept=".json" style="display:none">
 </header>
 <main>
 
-  <h2>Vendors</h2>
-  <div class="hint" style="margin-bottom:10px">Drop a price list — CSV, Excel, PDF, or a photo/screenshot — onto any warehouse row, or onto a vendor's “new warehouse” box below it. CSV/Excel parse locally; PDFs &amp; images are extracted with Claude AI (add your API key in ⚙ Settings).</div>
-  <div id="vendorGrid"></div>
+  <div id="viewVendors">
+    <h2>Vendors</h2>
+    <div class="hint" style="margin-bottom:10px">Drop a price list — CSV, Excel, PDF, or a photo/screenshot — onto any warehouse row, or onto a vendor's “new warehouse” box below it. CSV/Excel parse locally; PDFs &amp; images are extracted with Claude AI (add your API key in ⚙ Settings).</div>
+    <div id="vendorGrid"></div>
 
-  <h2>Orders</h2>
-  <div class="hint" style="margin-bottom:10px">Track a purchase from order to delivery — attach a receipt/screenshot, a tracking number, and payment info.</div>
-  <div id="orderGrid"></div>
-
-  <div class="searchrow">
-    <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
-    <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
+    <div class="searchrow">
+      <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
+      <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
+    </div>
+    <h2 id="resultsTitle">All products</h2>
+    <div id="results"></div>
   </div>
-  <h2 id="resultsTitle">All products</h2>
-  <div id="results"></div>
+
+  <div id="viewOrders" style="display:none">
+    <h2>Orders</h2>
+    <div class="hint" style="margin-bottom:10px">Track a purchase from order to delivery — attach a receipt/screenshot, a tracking number, and payment info. Orders are personal — kept separate from the shareable vendor/price data, with their own backup file.</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="small" id="ordersExportBtn" title="Download orders as JSON — separate from vendor/price data">Export orders</button>
+      <button class="small" id="ordersImportBtn" title="Restore orders from JSON">Import orders</button>
+      <input type="file" id="ordersImportFile" accept=".json" style="display:none">
+    </div>
+    <div id="orderGrid"></div>
+  </div>
 
 </main>
 
@@ -336,11 +355,28 @@ const DBKEY = 'vialhunterDB_v1';
 const OLDKEY = 'peptideCompareDB_v1'; // pre-rename data, migrated on first load
 let db = load();
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors){ d.orders = d.orders||[]; return d; } }catch(e){}
-  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ d.orders = d.orders||[]; localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
-  return {vendors:[], warehouses:[], orders:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
+  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors) return d; }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
+  return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
 }
 function save(){ localStorage.setItem(DBKEY, JSON.stringify(db)); }
+
+/* Orders live in their own localStorage key/JSON, deliberately separate from
+   vendors/warehouses: price-list data is meant to be shared between people,
+   orders are personal purchase history and must never ride along in a shared
+   vendor export/import. */
+const ORDERS_KEY = 'vialhunterOrdersDB_v1';
+let ordersDb = loadOrders();
+function loadOrders(){
+  try{ const d = JSON.parse(localStorage.getItem(ORDERS_KEY)); if(d && Array.isArray(d.orders)) return d; }catch(e){}
+  return {orders:[]};
+}
+function saveOrders(){ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
+// One-time migration for anyone who had orders briefly stored inside the main db.
+if(Array.isArray(db.orders)){
+  if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
+  delete db.orders; save();
+}
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function $(s){ return document.querySelector(s); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -604,7 +640,7 @@ function wireSteppers(root, onSet){
 function renderOrders(){
   const g = $('#orderGrid');
   g.innerHTML = '';
-  for(const o of db.orders){
+  for(const o of ordersDb.orders){
     const vendor = o.vendorId ? db.vendors.find(v=>v.id===o.vendorId) : null;
     const trackUrl = trackingUrl(o.carrier, o.trackingNumber);
     const card = document.createElement('div');
@@ -632,22 +668,22 @@ function renderOrders(){
 
   g.querySelectorAll('[data-editord]').forEach(b=>b.onclick=()=>openOrderModal(b.dataset.editord));
   g.querySelectorAll('[data-delord]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this order?')){
-    db.orders = db.orders.filter(o=>o.id!==b.dataset.delord); save(); renderOrders(); }});
+    ordersDb.orders = ordersDb.orders.filter(o=>o.id!==b.dataset.delord); saveOrders(); renderOrders(); }});
   g.querySelectorAll('[data-ordphoto]').forEach(el=>{
     el.onclick = ()=>{
-      const o = db.orders.find(x=>x.id===el.dataset.ordphoto);
+      const o = ordersDb.orders.find(x=>x.id===el.dataset.ordphoto);
       const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
-      inp.onchange = ()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ o.photo=d; save(); renderOrders(); }); };
+      inp.onchange = ()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ o.photo=d; saveOrders(); renderOrders(); }); };
       inp.click();
     };
   });
   g.querySelectorAll('[data-ordstepper]').forEach(el=>{
-    const o = db.orders.find(x=>x.id===el.dataset.ordstepper);
+    const o = ordersDb.orders.find(x=>x.id===el.dataset.ordstepper);
     wireSteppers(el, idx=>{
       o.status = ORDER_STAGES[idx].key;
       o.stageDates = o.stageDates || {};
       for(let i=0;i<=idx;i++){ if(!o.stageDates[ORDER_STAGES[i].key]) o.stageDates[ORDER_STAGES[i].key] = new Date().toLocaleDateString(); }
-      save(); renderOrders();
+      saveOrders(); renderOrders();
     });
   });
 }
@@ -655,7 +691,7 @@ function renderOrders(){
 let editingOrderId = null, ordPhotoData = null, ordEditStatus = 'ordered';
 function openOrderModal(id){
   editingOrderId = id; ordPhotoData = null;
-  const o = id ? db.orders.find(x=>x.id===id) : null;
+  const o = id ? ordersDb.orders.find(x=>x.id===id) : null;
   $('#ordTitle').textContent = o ? 'Edit order' : 'Add order';
   const vsel = $('#ordVendor');
   vsel.innerHTML = '<option value="">—</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
@@ -672,7 +708,7 @@ function openOrderModal(id){
 }
 function renderOrdStepperPreview(){
   const el = $('#ordStepper');
-  el.innerHTML = stepperHtml({status:ordEditStatus, stageDates:(editingOrderId&&db.orders.find(x=>x.id===editingOrderId)||{}).stageDates}, 'preview');
+  el.innerHTML = stepperHtml({status:ordEditStatus, stageDates:(editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).stageDates}, 'preview');
   wireSteppers(el, idx=>{ ordEditStatus = ORDER_STAGES[idx].key; renderOrdStepperPreview(); });
 }
 $('#ordCancel').onclick = ()=>$('#orderOverlay').classList.remove('open');
@@ -688,7 +724,7 @@ $('#ordSave').onclick = ()=>{
     status: ordEditStatus
   };
   if(editingOrderId){
-    const o = db.orders.find(x=>x.id===editingOrderId);
+    const o = ordersDb.orders.find(x=>x.id===editingOrderId);
     o.stageDates = o.stageDates || {};
     const idx = stageIndex(ordEditStatus);
     for(let i=0;i<=idx;i++){ if(!o.stageDates[ORDER_STAGES[i].key]) o.stageDates[ORDER_STAGES[i].key] = new Date().toLocaleDateString(); }
@@ -698,10 +734,34 @@ $('#ordSave').onclick = ()=>{
     const stageDates = {};
     const idx = stageIndex(ordEditStatus);
     for(let i=0;i<=idx;i++) stageDates[ORDER_STAGES[i].key] = today;
-    db.orders.push(Object.assign({id:uid(), createdAt:today, stageDates}, data));
+    ordersDb.orders.push(Object.assign({id:uid(), createdAt:today, stageDates}, data));
   }
-  save(); $('#orderOverlay').classList.remove('open'); renderOrders();
+  saveOrders(); $('#orderOverlay').classList.remove('open'); renderOrders();
 };
+
+/* Orders export/import: a separate JSON file from the vendor/price backup,
+   since orders are personal purchase history rather than shareable data. */
+function exportOrdersPayload(){
+  return JSON.stringify({app:'vialhunter-orders', exported:new Date().toISOString(), orders: ordersDb.orders}, null, 2);
+}
+$('#ordersExportBtn').onclick = ()=>{
+  const blob = new Blob([exportOrdersPayload()], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download = 'vialhunter-orders-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+};
+$('#ordersImportBtn').onclick = ()=>$('#ordersImportFile').click();
+$('#ordersImportFile').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return;
+  f.text().then(t=>{
+    try{ const d = JSON.parse(t);
+      if(!Array.isArray(d.orders)) throw new Error('not an orders backup file');
+      ordersDb = {orders: d.orders}; saveOrders(); renderOrders();
+      toast('Imported '+d.orders.length+' orders');
+    }catch(err){ toastErr('Import failed: '+err.message); }
+  });
+  e.target.value='';
+};
+
 const ordp = $('#ordPhoto');
 ordp.onclick = ()=>$('#ordPhotoFile').click();
 $('#ordPhotoFile').onchange = e=>{ if(e.target.files[0]) readImage(e.target.files[0], d=>{ ordPhotoData=d; ordp.innerHTML=`<img src="${d}">`; }); };
@@ -1263,11 +1323,13 @@ $('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.s
 /* Backups are built ALLOWLIST-style: only vendors/warehouses/cart/model are ever
    serialized, so the API key (or any future secret in settings) cannot leak into a
    shared JSON file. A final tripwire scan refuses to export if the key string
-   somehow appears anywhere in the payload (e.g. pasted into a vendor field). */
+   somehow appears anywhere in the payload (e.g. pasted into a vendor field).
+   Orders are deliberately excluded — this file is meant to be shared between
+   people, and orders are personal purchase history (see exportOrdersPayload). */
 function exportPayload(){
   const clean = {
     app: 'vialhunter', exported: new Date().toISOString(),
-    vendors: db.vendors, warehouses: db.warehouses, orders: db.orders, cart: db.cart,
+    vendors: db.vendors, warehouses: db.warehouses, cart: db.cart,
     settings: { model: (db.settings && db.settings.model) || 'claude-sonnet-5' }
   };
   const json = JSON.stringify(clean, null, 2);
@@ -1289,8 +1351,9 @@ $('#importFile').onchange = e=>{
     try{ const d = JSON.parse(t);
       if(!d.vendors || !d.warehouses) throw new Error('not a backup file');
       if(d.settings) delete d.settings.apiKey; // never accept a key from a shared file
+      delete d.orders; // vendor imports never touch personal order data
       const key = db.settings.apiKey;
-      db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[]; db.orders = db.orders||[];
+      db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[];
       save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
     }catch(err){ toastErr('Import failed: '+err.message); }
   });
@@ -1308,6 +1371,25 @@ function applyTheme(t){
 }
 $('#themeBtn').onclick = ()=> applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');
 applyTheme((function(){ try{ const s=localStorage.getItem('vialhunter_theme'); if(s==='light'||s==='dark') return s; }catch(e){} return 'dark'; })());
+
+/* ============ view switching (Vendors / Orders) ============
+   One page, two views toggled by JS — keeps the app a single static file
+   (no build step, no second page to keep in sync) while still giving Orders
+   its own nav tab and a bookmarkable #orders URL. */
+function setView(v){
+  const isOrders = v==='orders';
+  $('#viewVendors').style.display = isOrders ? 'none' : '';
+  $('#viewOrders').style.display = isOrders ? '' : 'none';
+  $('#vendorHeaderActions').style.display = isOrders ? 'none' : '';
+  $('#navVendors').classList.toggle('active', !isOrders);
+  $('#navOrders').classList.toggle('active', isOrders);
+  const hash = isOrders ? '#orders' : '';
+  if(location.hash !== hash) history.replaceState(null, '', location.pathname+location.search+hash);
+}
+$('#navVendors').onclick = ()=>setView('vendors');
+$('#navOrders').onclick = ()=>setView('orders');
+window.addEventListener('hashchange', ()=>setView(location.hash==='#orders'?'orders':'vendors'));
+setView(location.hash==='#orders' ? 'orders' : 'vendors');
 
 /* ============ init ============ */
 function renderAll(){ renderVendors(); renderOrders(); refreshVendorFilter(); renderResults(); renderCartCount(); }

@@ -21,7 +21,7 @@ Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `inde
 - **Price list upload**: drag & drop CSV or Excel (parsed locally, understands the "P Test" sheet layout with Shipping/Minimum/Upload Date meta rows). PDF extraction uses the Claude API — paste your API key in ⚙ Settings (key stays in your browser, calls go straight to api.anthropic.com).
 - **Search**: type a peptide; every warehouse stocking it appears, lowest price flagged BEST.
 - **Cart optimizer**: finds the cheapest purchase plan, splitting across warehouses while accounting for shipping, free-ship thresholds, and minimum orders. Also shows "buy everything from one vendor" totals. Generates a WhatsApp order message per vendor with a one-click Copy + Open WhatsApp button.
-- **Order tracking**: log a purchase with a receipt/screenshot photo, carrier + tracking number (click-through to FedEx/UPS/USPS/DHL tracking), payment amount and method. A left-to-right dot-and-line progress tracker (Ordered → Paid → Shipped → Received) is clickable both in the order form and on the card, and remembers the date each stage was reached.
+- **Order tracking**: its own "📦 Orders" tab, separate from the shareable vendor/pricing view. Log a purchase with a receipt/screenshot photo, carrier + tracking number (click-through to FedEx/UPS/USPS/DHL tracking), payment amount and method. A left-to-right dot-and-line progress tracker (Ordered → Paid → Shipped → Received) is clickable both in the order form and on the card, and remembers the date each stage was reached. Orders are stored under their own localStorage key with their own Export/Import buttons, so they never end up in a vendor backup you share with someone else.
 
 
 ## CSV format
@@ -31,5 +31,6 @@ Header row with `Code, Name, Specification, Price` columns (order/extra columns 
 ## Notes
 
 - API key is never included in Export backups.
-- Data is per-browser. To share a dataset with someone, send them your Export JSON.
+- Data is per-browser. To share a dataset with someone, send them your Export JSON — it contains vendors/warehouses/prices only, never your orders.
+- Orders back up to their own JSON file via the "Export orders" / "Import orders" buttons on the Orders tab, since they're personal purchase history rather than shareable pricing data.
 - Sample vendor/contact numbers in the demo use the reserved `555 01xx` fictional range — they are placeholders, not real WhatsApp lines.
