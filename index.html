@@ -329,6 +329,11 @@ tr.gchild td:first-child{padding-left:32px}
       <div><label>Results</label><textarea id="testResults" rows="2" placeholder="Purity %, contaminants, link to report…"></textarea></div>
     </div>
     <div class="frow"><div>
+      <label>Results files — lab report (PDF or image, multiple allowed)</label>
+      <div class="filestrip" id="testResultFileStrip"></div>
+    </div></div>
+    <input type="file" id="testResultFile" accept=".pdf,image/*" multiple style="display:none">
+    <div class="frow"><div>
       <label>Testing progress — click a step to mark it reached</label>
       <div class="stepper" id="testStepper"></div>
     </div></div>
@@ -766,6 +771,7 @@ function renderOrders(){
         ${testing.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(testing.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank">${esc(testing.sampleTrackingNumber)}</a>`:esc(testing.sampleTrackingNumber)}</div>`:''}
         ${testing.facilitatorUrl?`<div class="ordmeta">Facilitator: <a href="${esc(normalizeUrl(testing.facilitatorUrl))}" target="_blank">${esc(testing.facilitatorUrl)}</a></div>`:''}
         ${testing.results?`<div class="ordmeta">Results: ${esc(testing.results)}</div>`:''}
+        ${(testing.resultsFiles||[]).length?`<div class="ordmeta">Report: ${testing.resultsFiles.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
       </div>
       <div class="ordfoot">
         <button class="small" data-wa="${o.id}" ${contact?'':'disabled'} title="${contact?'Message '+esc(contact.name)+' on WhatsApp':'No WhatsApp number on file for this vendor'}">💬 WhatsApp</button>
@@ -809,7 +815,7 @@ function renderOrders(){
   });
 }
 
-let editingOrderId = null, ordEditStatus = 'ordered', testEditStatus = null, ordPhotos = [], ordCoas = [];
+let editingOrderId = null, ordEditStatus = 'ordered', testEditStatus = null, ordPhotos = [], ordCoas = [], testFiles = [];
 function openOrderModal(id){
   editingOrderId = id;
   const o = id ? ordersDb.orders.find(x=>x.id===id) : null;
@@ -834,6 +840,8 @@ function openOrderModal(id){
   $('#testTracking').value = testing.sampleTrackingNumber || '';
   $('#testFacilitator').value = testing.facilitatorUrl || '';
   $('#testResults').value = testing.results || '';
+  testFiles = Array.isArray(testing.resultsFiles) ? JSON.parse(JSON.stringify(testing.resultsFiles)) : [];
+  renderTestFileStrip();
   testEditStatus = testing.status || null;
   renderTestStepperPreview();
   $('#orderOverlay').classList.add('open');
@@ -879,9 +887,25 @@ function addOrdCoas(files){
     readFileRaw(f, item=>{ ordCoas.push(item); renderOrdCoaStrip(); });
   });
 }
+function renderTestFileStrip(){
+  const el = $('#testResultFileStrip');
+  el.innerHTML = testFiles.map((c,i)=>{
+    const isImg = (c.type||'').startsWith('image/');
+    const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
+    return `<div class="filetile doc" title="${esc(c.name)}">${isImg?`<img src="${c.data}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmtestfile="${i}" title="Remove">✕</button></div>`;
+  }).join('') + `<div class="filetile add" id="testResultFileAdd" title="Add results file(s)">+</div>`;
+  el.querySelectorAll('[data-rmtestfile]').forEach(b=>b.onclick=()=>{ testFiles.splice(+b.dataset.rmtestfile,1); renderTestFileStrip(); });
+  $('#testResultFileAdd').onclick = ()=>$('#testResultFile').click();
+}
+function addTestFiles(files){
+  Array.from(files).filter(f=>f.type==='application/pdf' || f.type.startsWith('image/')).forEach(f=>{
+    readFileRaw(f, item=>{ testFiles.push(item); renderTestFileStrip(); });
+  });
+}
 $('#ordPhotoFile').onchange = e=>{ if(e.target.files.length) addOrdPhotos(e.target.files); e.target.value=''; };
 $('#ordCoaFile').onchange = e=>{ if(e.target.files.length) addOrdCoas(e.target.files); e.target.value=''; };
-[['#ordPhotoStrip', ()=>addOrdPhotos], ['#ordCoaStrip', ()=>addOrdCoas]].forEach(([sel, getAdd])=>{
+$('#testResultFile').onchange = e=>{ if(e.target.files.length) addTestFiles(e.target.files); e.target.value=''; };
+[['#ordPhotoStrip', ()=>addOrdPhotos], ['#ordCoaStrip', ()=>addOrdCoas], ['#testResultFileStrip', ()=>addTestFiles]].forEach(([sel, getAdd])=>{
   const el = $(sel);
   el.addEventListener('dragover', e=>{e.preventDefault(); el.classList.add('dragover');});
   el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
@@ -900,6 +924,7 @@ $('#ordSave').onclick = ()=>{
     sampleTrackingNumber: $('#testTracking').value.trim(),
     facilitatorUrl: $('#testFacilitator').value.trim(),
     results: $('#testResults').value.trim(),
+    resultsFiles: testFiles,
     status: testEditStatus,
     stageDates: testIdx>=0 ? advanceStageDates((existing&&existing.testing||{}).stageDates, TEST_STAGES, testIdx) : ((existing&&existing.testing||{}).stageDates||{})
   };
