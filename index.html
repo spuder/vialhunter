@@ -71,6 +71,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .vmcontact input{flex:1;min-width:0}
 .whrow{display:flex;justify-content:space-between;align-items:center;background:var(--panel2);border-radius:8px;padding:6px 10px;font-size:13px;margin-bottom:6px}
 .whrow .meta{color:var(--muted)}
+.meta{color:var(--muted)}
 .vfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
 .addcard{border:2px dashed var(--border);border-radius:14px;display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;min-height:170px;text-align:center;padding:14px}
 .addcard:hover,.addcard.dragover{border-color:var(--accent);color:var(--text)}
@@ -80,6 +81,28 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .whrow.dragover{outline:2px dashed var(--accent);outline-offset:1px;background:rgba(249,115,22,.08)}
 .newwh{border:1.5px dashed var(--border);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--muted);text-align:center;cursor:pointer;margin-top:2px;transition:.12s}
 .newwh:hover,.newwh.dragover{border-color:var(--accent);color:var(--text);background:rgba(249,115,22,.06)}
+
+/* orders */
+#orderGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:26px}
+.ordcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.ordhead{display:flex;gap:12px;align-items:center}
+.ordphoto{width:56px;height:56px;border-radius:12px;background:var(--panel2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);overflow:hidden;flex-shrink:0;cursor:pointer}
+.ordphoto img{width:100%;height:100%;object-fit:cover}
+.ordname{font-weight:700;font-size:15px}
+.ordmeta{color:var(--muted);font-size:13px}
+.ordfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
+
+/* stepper: dots + connecting lines, left to right */
+.stepper{display:flex;align-items:flex-start;margin:4px 0}
+.step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;cursor:pointer}
+.step .dot{width:22px;height:22px;border-radius:50%;background:var(--panel2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);z-index:1;transition:.15s}
+.step .line{position:absolute;top:10px;left:-50%;width:100%;height:2px;background:var(--border);z-index:0}
+.step:first-child .line{display:none}
+.step.done .dot{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
+.step.done .line{background:var(--accent)}
+.step .label{font-size:11px;color:var(--muted);margin-top:5px;white-space:nowrap}
+.step.done .label{color:var(--text);font-weight:600}
+.step.current .dot{box-shadow:0 0 0 3px var(--pinbg)}
 
 /* results */
 table{width:100%;border-collapse:collapse}
@@ -168,6 +191,10 @@ tr.gchild td:first-child{padding-left:32px}
   <div class="hint" style="margin-bottom:10px">Drop a price list — CSV, Excel, PDF, or a photo/screenshot — onto any warehouse row, or onto a vendor's “new warehouse” box below it. CSV/Excel parse locally; PDFs &amp; images are extracted with Claude AI (add your API key in ⚙ Settings).</div>
   <div id="vendorGrid"></div>
 
+  <h2>Orders</h2>
+  <div class="hint" style="margin-bottom:10px">Track a purchase from order to delivery — attach a receipt/screenshot, a tracking number, and payment info.</div>
+  <div id="orderGrid"></div>
+
   <div class="searchrow">
     <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
     <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
@@ -218,6 +245,38 @@ tr.gchild td:first-child{padding-left:32px}
   <div class="mfoot">
     <button id="whCancel">Cancel</button>
     <button class="primary" id="whSave">Save</button>
+  </div>
+</div></div>
+
+<!-- Order modal -->
+<div class="overlay" id="orderOverlay"><div class="modal">
+  <h3 id="ordTitle">Add order</h3>
+  <div class="frow">
+    <div class="photodrop" id="ordPhoto" title="Drop or click to attach a receipt/screenshot"><span>📷</span></div>
+    <div style="flex:3">
+      <div class="frow">
+        <div><label>Vendor (optional)</label><select id="ordVendor"><option value="">—</option></select></div>
+        <div><label>Carrier</label><select id="ordCarrier">
+          <option>FedEx</option><option>UPS</option><option>USPS</option><option>DHL</option><option>Other</option>
+        </select></div>
+      </div>
+      <div class="frow">
+        <div><label>Tracking number</label><input id="ordTracking" placeholder="1Z999AA10123456784"></div>
+      </div>
+      <div class="frow">
+        <div><label>Payment amount ($)</label><input id="ordAmount" type="number" step="0.01" placeholder="150.00"></div>
+        <div><label>Payment method</label><input id="ordMethod" placeholder="Zelle, Venmo, Crypto…"></div>
+      </div>
+    </div>
+  </div>
+  <div class="frow"><div>
+    <label>Progress — click a step to mark it reached</label>
+    <div class="stepper" id="ordStepper"></div>
+  </div></div>
+  <input type="file" id="ordPhotoFile" accept="image/*" style="display:none">
+  <div class="mfoot">
+    <button id="ordCancel">Cancel</button>
+    <button class="primary" id="ordSave">Save order</button>
   </div>
 </div></div>
 
@@ -277,9 +336,9 @@ const DBKEY = 'vialhunterDB_v1';
 const OLDKEY = 'peptideCompareDB_v1'; // pre-rename data, migrated on first load
 let db = load();
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors) return d; }catch(e){}
-  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
-  return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
+  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors){ d.orders = d.orders||[]; return d; } }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ d.orders = d.orders||[]; localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
+  return {vendors:[], warehouses:[], orders:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
 }
 function save(){ localStorage.setItem(DBKEY, JSON.stringify(db)); }
 function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -500,6 +559,156 @@ $('#whSave').onclick = ()=>{
   }
   save(); $('#whOverlay').classList.remove('open'); renderAll();
 };
+
+/* ============ orders ============
+   An order tracks a single purchase end-to-end: receipt/screenshot photo,
+   carrier + tracking number, payment amount/method, and a 4-stage progress
+   (ordered -> paid -> shipped -> received). Progress is stored both as the
+   current `status` key and as `stageDates`, so each reached step keeps the
+   date it was marked — advancing a step never overwrites an earlier one. */
+const ORDER_STAGES = [
+  {key:'ordered', label:'Ordered', icon:'📝'},
+  {key:'paid', label:'Paid', icon:'💳'},
+  {key:'shipped', label:'Shipped', icon:'🚚'},
+  {key:'received', label:'Received', icon:'📦'}
+];
+function stageIndex(status){ const i = ORDER_STAGES.findIndex(s=>s.key===status); return i<0?0:i; }
+function trackingUrl(carrier, num){
+  if(!num) return null;
+  const n = encodeURIComponent(num.trim());
+  const c = String(carrier||'').toLowerCase();
+  if(c==='fedex') return 'https://www.fedex.com/fedextrack/?trknbr='+n;
+  if(c==='ups') return 'https://www.ups.com/track?tracknum='+n;
+  if(c==='usps') return 'https://tools.usps.com/go/TrackConfirmAction?tLabels='+n;
+  if(c==='dhl') return 'https://www.dhl.com/us-en/home/tracking.html?tracking-id='+n;
+  return null;
+}
+function stepperHtml(order, idPrefix){
+  const cur = stageIndex(order.status);
+  return ORDER_STAGES.map((s,i)=>{
+    const done = i<=cur;
+    const dateStr = (order.stageDates && order.stageDates[s.key]) || '';
+    return `<div class="step${done?' done':''}${i===cur?' current':''}" data-stepwh="${idPrefix}" data-stepidx="${i}" title="${esc(s.label)}${dateStr?' · '+esc(dateStr):''} — click to mark reached">
+      <div class="line"></div>
+      <div class="dot">${done?'✓':s.icon}</div>
+      <div class="label">${esc(s.label)}</div>
+    </div>`;
+  }).join('');
+}
+function wireSteppers(root, onSet){
+  root.querySelectorAll('[data-stepwh]').forEach(el=>{
+    el.onclick = e=>{ e.stopPropagation(); onSet(+el.dataset.stepidx); };
+  });
+}
+
+function renderOrders(){
+  const g = $('#orderGrid');
+  g.innerHTML = '';
+  for(const o of db.orders){
+    const vendor = o.vendorId ? db.vendors.find(v=>v.id===o.vendorId) : null;
+    const trackUrl = trackingUrl(o.carrier, o.trackingNumber);
+    const card = document.createElement('div');
+    card.className = 'ordcard';
+    card.innerHTML = `
+      <div class="ordhead">
+        <div class="ordphoto" data-ordphoto="${o.id}" title="Click to attach/replace photo">${o.photo?`<img src="${o.photo}">`:'📦'}</div>
+        <div>
+          <div class="ordname">${vendor?esc(vendor.name):'Order'}${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank">${esc(o.trackingNumber)}</a>`:esc(o.trackingNumber)}</span>`:''}</div>
+          <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${o.createdAt?' · '+esc(o.createdAt):''}</div>
+        </div>
+      </div>
+      <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(o, o.id)}</div>
+      <div class="ordfoot">
+        <button class="small" data-editord="${o.id}">Edit</button>
+        <button class="small danger" data-delord="${o.id}">✕</button>
+      </div>`;
+    g.appendChild(card);
+  }
+  const add = document.createElement('div');
+  add.className = 'addcard';
+  add.innerHTML = '<div class="big">＋</div><div><strong>Add order</strong></div><div class="hint">Track a package from order to delivery</div>';
+  add.addEventListener('click', ()=>openOrderModal(null));
+  g.appendChild(add);
+
+  g.querySelectorAll('[data-editord]').forEach(b=>b.onclick=()=>openOrderModal(b.dataset.editord));
+  g.querySelectorAll('[data-delord]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this order?')){
+    db.orders = db.orders.filter(o=>o.id!==b.dataset.delord); save(); renderOrders(); }});
+  g.querySelectorAll('[data-ordphoto]').forEach(el=>{
+    el.onclick = ()=>{
+      const o = db.orders.find(x=>x.id===el.dataset.ordphoto);
+      const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+      inp.onchange = ()=>{ if(inp.files[0]) readImage(inp.files[0], d=>{ o.photo=d; save(); renderOrders(); }); };
+      inp.click();
+    };
+  });
+  g.querySelectorAll('[data-ordstepper]').forEach(el=>{
+    const o = db.orders.find(x=>x.id===el.dataset.ordstepper);
+    wireSteppers(el, idx=>{
+      o.status = ORDER_STAGES[idx].key;
+      o.stageDates = o.stageDates || {};
+      for(let i=0;i<=idx;i++){ if(!o.stageDates[ORDER_STAGES[i].key]) o.stageDates[ORDER_STAGES[i].key] = new Date().toLocaleDateString(); }
+      save(); renderOrders();
+    });
+  });
+}
+
+let editingOrderId = null, ordPhotoData = null, ordEditStatus = 'ordered';
+function openOrderModal(id){
+  editingOrderId = id; ordPhotoData = null;
+  const o = id ? db.orders.find(x=>x.id===id) : null;
+  $('#ordTitle').textContent = o ? 'Edit order' : 'Add order';
+  const vsel = $('#ordVendor');
+  vsel.innerHTML = '<option value="">—</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
+  vsel.value = o ? (o.vendorId||'') : '';
+  $('#ordCarrier').value = o ? (o.carrier||'FedEx') : 'FedEx';
+  $('#ordTracking').value = o ? (o.trackingNumber||'') : '';
+  $('#ordAmount').value = o && o.paymentAmount!=null ? o.paymentAmount : '';
+  $('#ordMethod').value = o ? (o.paymentMethod||'') : '';
+  $('#ordPhoto').innerHTML = o&&o.photo ? `<img src="${o.photo}">` : '<span>📷</span>';
+  if(o&&o.photo) ordPhotoData = o.photo;
+  ordEditStatus = o ? (o.status||'ordered') : 'ordered';
+  renderOrdStepperPreview();
+  $('#orderOverlay').classList.add('open');
+}
+function renderOrdStepperPreview(){
+  const el = $('#ordStepper');
+  el.innerHTML = stepperHtml({status:ordEditStatus, stageDates:(editingOrderId&&db.orders.find(x=>x.id===editingOrderId)||{}).stageDates}, 'preview');
+  wireSteppers(el, idx=>{ ordEditStatus = ORDER_STAGES[idx].key; renderOrdStepperPreview(); });
+}
+$('#ordCancel').onclick = ()=>$('#orderOverlay').classList.remove('open');
+$('#ordSave').onclick = ()=>{
+  const num = v => v===''?null:parseFloat(v);
+  const data = {
+    vendorId: $('#ordVendor').value || null,
+    carrier: $('#ordCarrier').value,
+    trackingNumber: $('#ordTracking').value.trim(),
+    paymentAmount: num($('#ordAmount').value),
+    paymentMethod: $('#ordMethod').value.trim(),
+    photo: ordPhotoData,
+    status: ordEditStatus
+  };
+  if(editingOrderId){
+    const o = db.orders.find(x=>x.id===editingOrderId);
+    o.stageDates = o.stageDates || {};
+    const idx = stageIndex(ordEditStatus);
+    for(let i=0;i<=idx;i++){ if(!o.stageDates[ORDER_STAGES[i].key]) o.stageDates[ORDER_STAGES[i].key] = new Date().toLocaleDateString(); }
+    Object.assign(o, data);
+  } else {
+    const today = new Date().toLocaleDateString();
+    const stageDates = {};
+    const idx = stageIndex(ordEditStatus);
+    for(let i=0;i<=idx;i++) stageDates[ORDER_STAGES[i].key] = today;
+    db.orders.push(Object.assign({id:uid(), createdAt:today, stageDates}, data));
+  }
+  save(); $('#orderOverlay').classList.remove('open'); renderOrders();
+};
+const ordp = $('#ordPhoto');
+ordp.onclick = ()=>$('#ordPhotoFile').click();
+$('#ordPhotoFile').onchange = e=>{ if(e.target.files[0]) readImage(e.target.files[0], d=>{ ordPhotoData=d; ordp.innerHTML=`<img src="${d}">`; }); };
+ordp.addEventListener('dragover', e=>{e.preventDefault(); ordp.classList.add('dragover');});
+ordp.addEventListener('dragleave', ()=>ordp.classList.remove('dragover'));
+ordp.addEventListener('drop', e=>{ e.preventDefault(); ordp.classList.remove('dragover');
+  const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('image/')) readImage(f, d=>{ ordPhotoData=d; ordp.innerHTML=`<img src="${d}">`; }); });
 
 /* ============ upload / parsing ============
    Every warehouse row and every vendor's "new warehouse" box is its own drop
@@ -1058,7 +1267,7 @@ $('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.s
 function exportPayload(){
   const clean = {
     app: 'vialhunter', exported: new Date().toISOString(),
-    vendors: db.vendors, warehouses: db.warehouses, cart: db.cart,
+    vendors: db.vendors, warehouses: db.warehouses, orders: db.orders, cart: db.cart,
     settings: { model: (db.settings && db.settings.model) || 'claude-sonnet-5' }
   };
   const json = JSON.stringify(clean, null, 2);
@@ -1081,7 +1290,7 @@ $('#importFile').onchange = e=>{
       if(!d.vendors || !d.warehouses) throw new Error('not a backup file');
       if(d.settings) delete d.settings.apiKey; // never accept a key from a shared file
       const key = db.settings.apiKey;
-      db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[];
+      db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[]; db.orders = db.orders||[];
       save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
     }catch(err){ toastErr('Import failed: '+err.message); }
   });
@@ -1101,7 +1310,7 @@ $('#themeBtn').onclick = ()=> applyTheme(document.documentElement.getAttribute('
 applyTheme((function(){ try{ const s=localStorage.getItem('vialhunter_theme'); if(s==='light'||s==='dark') return s; }catch(e){} return 'dark'; })());
 
 /* ============ init ============ */
-function renderAll(){ renderVendors(); refreshVendorFilter(); renderResults(); renderCartCount(); }
+function renderAll(){ renderVendors(); renderOrders(); refreshVendorFilter(); renderResults(); renderCartCount(); }
 renderAll();
 //JS-END
 </script>
