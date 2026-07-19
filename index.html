@@ -798,8 +798,7 @@ function renderOrders(){
     const o = ordersDb.orders.find(x=>x.id===b.dataset.wa);
     const contact = resolveOrderContact(o);
     if(!contact) return;
-    const msg = `Hi ${contact.name}, checking in on my order${o.trackingNumber?' (tracking '+o.trackingNumber+')':''}.`;
-    b.onclick = ()=>window.open(waLink(contact.phone, msg), '_blank');
+    b.onclick = ()=>window.open(waLink(contact.phone), '_blank');
   });
   g.querySelectorAll('[data-ordstepper]').forEach(el=>{
     const o = ordersDb.orders.find(x=>x.id===el.dataset.ordstepper);
