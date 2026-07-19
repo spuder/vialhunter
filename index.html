@@ -680,6 +680,11 @@ function advanceStageDates(existing, stages, idx){
   for(let i=0;i<=idx;i++){ if(!d[stages[i].key]) d[stages[i].key] = new Date().toLocaleDateString(); }
   return d;
 }
+function pruneStageDates(existing, stages, idx){
+  const d = Object.assign({}, existing);
+  for(let i=idx+1;i<stages.length;i++){ delete d[stages[i].key]; }
+  return d;
+}
 function trackingUrl(carrier, num){
   if(!num) return null;
   const n = encodeURIComponent(num.trim());
@@ -799,8 +804,10 @@ function renderOrders(){
   g.querySelectorAll('[data-ordstepper]').forEach(el=>{
     const o = ordersDb.orders.find(x=>x.id===el.dataset.ordstepper);
     wireSteppers(el, idx=>{
-      o.status = ORDER_STAGES[idx].key;
-      o.stageDates = advanceStageDates(o.stageDates, ORDER_STAGES, idx);
+      const curIdx = stageIndex(o.status);
+      const newIdx = idx===curIdx ? Math.max(0, idx-1) : idx;
+      o.status = ORDER_STAGES[newIdx].key;
+      o.stageDates = newIdx>=curIdx ? advanceStageDates(o.stageDates, ORDER_STAGES, newIdx) : pruneStageDates(o.stageDates, ORDER_STAGES, newIdx);
       saveOrders(); renderOrders();
     });
   });
@@ -808,8 +815,15 @@ function renderOrders(){
     const o = ordersDb.orders.find(x=>x.id===el.dataset.teststepper);
     wireSteppers(el, idx=>{
       o.testing = o.testing || {};
-      o.testing.status = TEST_STAGES[idx].key;
-      o.testing.stageDates = advanceStageDates(o.testing.stageDates, TEST_STAGES, idx);
+      const curIdx = testStageIndex(o.testing.status);
+      const newIdx = idx===curIdx ? idx-1 : idx;
+      if(newIdx<0){
+        delete o.testing.status;
+        o.testing.stageDates = {};
+      } else {
+        o.testing.status = TEST_STAGES[newIdx].key;
+        o.testing.stageDates = newIdx>=curIdx ? advanceStageDates(o.testing.stageDates, TEST_STAGES, newIdx) : pruneStageDates(o.testing.stageDates, TEST_STAGES, newIdx);
+      }
       saveOrders(); renderOrders();
     });
   });
