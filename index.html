@@ -96,6 +96,8 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .ordname{font-weight:700;font-size:15px}
 .ordmeta{color:var(--muted);font-size:13px}
 .ordfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
+.testingblock{border-top:1px solid var(--border);margin-top:6px;padding-top:8px}
+.testingblock h4{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
 
 /* stepper: dots + connecting lines, left to right */
 .stepper{display:flex;align-items:flex-start;margin:4px 0}
@@ -310,6 +312,28 @@ tr.gchild td:first-child{padding-left:32px}
     <label>Progress — click a step to mark it reached</label>
     <div class="stepper" id="ordStepper"></div>
   </div></div>
+
+  <div class="testingblock">
+    <h4>🧪 Testing</h4>
+    <div class="frow">
+      <div><label>Lab</label><input id="testLab" placeholder="e.g. Janoshik, Attest"></div>
+      <div><label>Sample carrier</label><select id="testCarrier">
+        <option>FedEx</option><option>UPS</option><option>USPS</option><option>DHL</option><option>Other</option>
+      </select></div>
+      <div><label>Sample tracking number</label><input id="testTracking" placeholder="1Z999AA10123456784"></div>
+    </div>
+    <div class="frow">
+      <div><label>Group testing facilitator (website)</label><input id="testFacilitator" placeholder="https://…"></div>
+    </div>
+    <div class="frow">
+      <div><label>Results</label><textarea id="testResults" rows="2" placeholder="Purity %, contaminants, link to report…"></textarea></div>
+    </div>
+    <div class="frow"><div>
+      <label>Testing progress — click a step to mark it reached</label>
+      <div class="stepper" id="testStepper"></div>
+    </div></div>
+  </div>
+
   <div class="mfoot">
     <button id="ordCancel">Cancel</button>
     <button class="primary" id="ordSave">Save order</button>
@@ -635,7 +659,22 @@ const ORDER_STAGES = [
   {key:'shipped', label:'Shipped', icon:'🚚'},
   {key:'received', label:'Received', icon:'📦'}
 ];
+// A second, independent progress track for lab testing of the order's contents.
+// Unlike the order's own progress it may legitimately have NOT STARTED (no
+// stage reached yet), so its index lookup returns -1 rather than defaulting
+// to the first stage.
+const TEST_STAGES = [
+  {key:'shipped', label:'Sample Shipped', icon:'📮'},
+  {key:'testing', label:'Testing', icon:'🧪'},
+  {key:'results', label:'Results', icon:'📋'}
+];
 function stageIndex(status){ const i = ORDER_STAGES.findIndex(s=>s.key===status); return i<0?0:i; }
+function testStageIndex(status){ return TEST_STAGES.findIndex(s=>s.key===status); }
+function advanceStageDates(existing, stages, idx){
+  const d = Object.assign({}, existing);
+  for(let i=0;i<=idx;i++){ if(!d[stages[i].key]) d[stages[i].key] = new Date().toLocaleDateString(); }
+  return d;
+}
 function trackingUrl(carrier, num){
   if(!num) return null;
   const n = encodeURIComponent(num.trim());
@@ -646,6 +685,7 @@ function trackingUrl(carrier, num){
   if(c==='dhl') return 'https://www.dhl.com/us-en/home/tracking.html?tracking-id='+n;
   return null;
 }
+function normalizeUrl(u){ return /^https?:\/\//i.test(u) ? u : 'https://'+u; }
 
 /* A vendor may have a company number plus several employee numbers; an order
    remembers WHICH one was actually used ("contactRef": 'company' or 'c<index>
@@ -680,11 +720,10 @@ function readFileRaw(file, cb){
   r.onload = ()=>cb({name:file.name, data:r.result, type:file.type||''});
   r.readAsDataURL(file);
 }
-function stepperHtml(order, idPrefix){
-  const cur = stageIndex(order.status);
-  return ORDER_STAGES.map((s,i)=>{
-    const done = i<=cur;
-    const dateStr = (order.stageDates && order.stageDates[s.key]) || '';
+function stepperHtml(stages, cur, stageDates, idPrefix){
+  return stages.map((s,i)=>{
+    const done = cur>=0 && i<=cur;
+    const dateStr = (stageDates && stageDates[s.key]) || '';
     return `<div class="step${done?' done':''}${i===cur?' current':''}" data-stepwh="${idPrefix}" data-stepidx="${i}" title="${esc(s.label)}${dateStr?' · '+esc(dateStr):''} — click to mark reached">
       <div class="line"></div>
       <div class="dot">${done?'✓':s.icon}</div>
@@ -707,6 +746,8 @@ function renderOrders(){
     const photos = o.photos || [];
     const coas = o.coas || [];
     const contact = resolveOrderContact(o);
+    const testing = o.testing || {};
+    const sampleTrackUrl = trackingUrl(testing.sampleCarrier, testing.sampleTrackingNumber);
     const card = document.createElement('div');
     card.className = 'ordcard';
     card.innerHTML = `
@@ -718,7 +759,14 @@ function renderOrders(){
           ${coas.length?`<div class="ordmeta">COA: ${coas.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
         </div>
       </div>
-      <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(o, o.id)}</div>
+      <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(ORDER_STAGES, stageIndex(o.status), o.stageDates, o.id)}</div>
+      <div class="testingblock">
+        <h4>🧪 Testing${testing.lab?' · '+esc(testing.lab):''}</h4>
+        <div class="stepper" data-teststepper="${o.id}">${stepperHtml(TEST_STAGES, testStageIndex(testing.status), testing.stageDates, 'test-'+o.id)}</div>
+        ${testing.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(testing.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank">${esc(testing.sampleTrackingNumber)}</a>`:esc(testing.sampleTrackingNumber)}</div>`:''}
+        ${testing.facilitatorUrl?`<div class="ordmeta">Facilitator: <a href="${esc(normalizeUrl(testing.facilitatorUrl))}" target="_blank">${esc(testing.facilitatorUrl)}</a></div>`:''}
+        ${testing.results?`<div class="ordmeta">Results: ${esc(testing.results)}</div>`:''}
+      </div>
       <div class="ordfoot">
         <button class="small" data-wa="${o.id}" ${contact?'':'disabled'} title="${contact?'Message '+esc(contact.name)+' on WhatsApp':'No WhatsApp number on file for this vendor'}">💬 WhatsApp</button>
         <button class="small" data-editord="${o.id}">Edit</button>
@@ -746,17 +794,26 @@ function renderOrders(){
     const o = ordersDb.orders.find(x=>x.id===el.dataset.ordstepper);
     wireSteppers(el, idx=>{
       o.status = ORDER_STAGES[idx].key;
-      o.stageDates = o.stageDates || {};
-      for(let i=0;i<=idx;i++){ if(!o.stageDates[ORDER_STAGES[i].key]) o.stageDates[ORDER_STAGES[i].key] = new Date().toLocaleDateString(); }
+      o.stageDates = advanceStageDates(o.stageDates, ORDER_STAGES, idx);
+      saveOrders(); renderOrders();
+    });
+  });
+  g.querySelectorAll('[data-teststepper]').forEach(el=>{
+    const o = ordersDb.orders.find(x=>x.id===el.dataset.teststepper);
+    wireSteppers(el, idx=>{
+      o.testing = o.testing || {};
+      o.testing.status = TEST_STAGES[idx].key;
+      o.testing.stageDates = advanceStageDates(o.testing.stageDates, TEST_STAGES, idx);
       saveOrders(); renderOrders();
     });
   });
 }
 
-let editingOrderId = null, ordEditStatus = 'ordered', ordPhotos = [], ordCoas = [];
+let editingOrderId = null, ordEditStatus = 'ordered', testEditStatus = null, ordPhotos = [], ordCoas = [];
 function openOrderModal(id){
   editingOrderId = id;
   const o = id ? ordersDb.orders.find(x=>x.id===id) : null;
+  const testing = (o && o.testing) || {};
   $('#ordTitle').textContent = o ? 'Edit order' : 'Add order';
   const vsel = $('#ordVendor');
   vsel.innerHTML = '<option value="">—</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
@@ -772,12 +829,26 @@ function openOrderModal(id){
   renderOrdCoaStrip();
   ordEditStatus = o ? (o.status||'ordered') : 'ordered';
   renderOrdStepperPreview();
+  $('#testLab').value = testing.lab || '';
+  $('#testCarrier').value = testing.sampleCarrier || 'FedEx';
+  $('#testTracking').value = testing.sampleTrackingNumber || '';
+  $('#testFacilitator').value = testing.facilitatorUrl || '';
+  $('#testResults').value = testing.results || '';
+  testEditStatus = testing.status || null;
+  renderTestStepperPreview();
   $('#orderOverlay').classList.add('open');
 }
 function renderOrdStepperPreview(){
   const el = $('#ordStepper');
-  el.innerHTML = stepperHtml({status:ordEditStatus, stageDates:(editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).stageDates}, 'preview');
+  const dates = (editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).stageDates;
+  el.innerHTML = stepperHtml(ORDER_STAGES, stageIndex(ordEditStatus), dates, 'preview');
   wireSteppers(el, idx=>{ ordEditStatus = ORDER_STAGES[idx].key; renderOrdStepperPreview(); });
+}
+function renderTestStepperPreview(){
+  const el = $('#testStepper');
+  const testing = (editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).testing || {};
+  el.innerHTML = stepperHtml(TEST_STAGES, testStageIndex(testEditStatus), testing.stageDates, 'testpreview');
+  wireSteppers(el, idx=>{ testEditStatus = TEST_STAGES[idx].key; renderTestStepperPreview(); });
 }
 $('#ordVendor').onchange = ()=>populateContactSelect($('#ordVendor').value, null);
 
@@ -821,6 +892,17 @@ $('#ordCoaFile').onchange = e=>{ if(e.target.files.length) addOrdCoas(e.target.f
 $('#ordCancel').onclick = ()=>$('#orderOverlay').classList.remove('open');
 $('#ordSave').onclick = ()=>{
   const num = v => v===''?null:parseFloat(v);
+  const existing = editingOrderId ? ordersDb.orders.find(x=>x.id===editingOrderId) : null;
+  const testIdx = testStageIndex(testEditStatus);
+  const testing = {
+    lab: $('#testLab').value.trim(),
+    sampleCarrier: $('#testCarrier').value,
+    sampleTrackingNumber: $('#testTracking').value.trim(),
+    facilitatorUrl: $('#testFacilitator').value.trim(),
+    results: $('#testResults').value.trim(),
+    status: testEditStatus,
+    stageDates: testIdx>=0 ? advanceStageDates((existing&&existing.testing||{}).stageDates, TEST_STAGES, testIdx) : ((existing&&existing.testing||{}).stageDates||{})
+  };
   const data = {
     vendorId: $('#ordVendor').value || null,
     contactRef: $('#ordContact').disabled ? null : ($('#ordContact').value || null),
@@ -830,19 +912,16 @@ $('#ordSave').onclick = ()=>{
     paymentMethod: $('#ordMethod').value.trim(),
     photos: ordPhotos,
     coas: ordCoas,
-    status: ordEditStatus
+    status: ordEditStatus,
+    testing: testing
   };
-  if(editingOrderId){
-    const o = ordersDb.orders.find(x=>x.id===editingOrderId);
-    o.stageDates = o.stageDates || {};
-    const idx = stageIndex(ordEditStatus);
-    for(let i=0;i<=idx;i++){ if(!o.stageDates[ORDER_STAGES[i].key]) o.stageDates[ORDER_STAGES[i].key] = new Date().toLocaleDateString(); }
-    Object.assign(o, data);
+  const idx = stageIndex(ordEditStatus);
+  if(existing){
+    existing.stageDates = advanceStageDates(existing.stageDates, ORDER_STAGES, idx);
+    Object.assign(existing, data);
   } else {
     const today = new Date().toLocaleDateString();
-    const stageDates = {};
-    const idx = stageIndex(ordEditStatus);
-    for(let i=0;i<=idx;i++) stageDates[ORDER_STAGES[i].key] = today;
+    const stageDates = advanceStageDates({}, ORDER_STAGES, idx);
     ordersDb.orders.push(Object.assign({id:uid(), createdAt:today, stageDates}, data));
   }
   saveOrders(); $('#orderOverlay').classList.remove('open'); renderOrders();
