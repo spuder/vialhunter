@@ -14,6 +14,10 @@ Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `inde
 
 ![VialHunter in light mode — Warm Paper theme](assets/vialhunter-light.png)
 
+**Orders — shipping & lab-testing progress**
+
+![VialHunter Orders tab showing shipping progress and an independent lab-testing progress tracker per order](assets/vialhunter-orders.png)
+
 ## Features
 
 - **Vendors**: add/remove freely (nothing hard-coded). Drag a contact photo or `.vcf` card onto a vendor. Company + employee WhatsApp numbers render as clickable `wa.me` links.
