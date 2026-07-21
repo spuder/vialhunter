@@ -98,11 +98,17 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .ordfoot{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
 .testingblock{border-top:1px solid var(--border);margin-top:6px;padding-top:8px}
 .testingblock h4{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+.testcard{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px;background:var(--panel2)}
+.testcardhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.ordphotostrip{display:flex;flex-wrap:wrap;gap:6px}
+.ordthumb{width:48px;height:48px;border-radius:8px;overflow:hidden;cursor:zoom-in;border:1px solid var(--border);flex-shrink:0}
+.ordthumb img{width:100%;height:100%;object-fit:cover}
+.ordthumb:hover{border-color:var(--accent)}
 
 /* stepper: dots + connecting lines, left to right */
 .stepper{display:flex;align-items:flex-start;margin:4px 0}
 .step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;cursor:pointer}
-.step .dot{width:22px;height:22px;border-radius:50%;background:var(--panel2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);z-index:1;transition:.15s}
+.step .dot{width:22px;height:22px;border-radius:50%;background:var(--panel2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;overflow:hidden;color:var(--muted);z-index:1;transition:.15s;flex-shrink:0}
 .step .line{position:absolute;top:10px;left:-50%;width:100%;height:2px;background:var(--border);z-index:0}
 .step:first-child .line{display:none}
 .step.done .dot{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
@@ -159,6 +165,17 @@ tr.gchild td:first-child{padding-left:32px}
 .filetile .rm{position:absolute;top:1px;right:1px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;cursor:pointer;padding:0}
 .filetile.add{cursor:pointer;font-size:24px;border-style:dashed}
 .filetile.add:hover{border-color:var(--accent);color:var(--text)}
+.filetile img{cursor:zoom-in}
+
+#lightboxOverlay{align-items:center;background:rgba(0,0,0,.85)}
+.lightbox{position:relative;max-width:94vw;max-height:90vh;display:flex}
+.lightbox img{max-width:94vw;max-height:90vh;object-fit:contain;border-radius:6px}
+.lbclose,.lbnav{position:fixed;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lbclose{top:16px;right:20px;width:36px;height:36px;font-size:16px}
+.lbnav{top:50%;transform:translateY(-50%);width:46px;height:46px;font-size:24px}
+.lbprev{left:16px}
+.lbnext{right:16px}
+.lbcaption{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;background:rgba(0,0,0,.55);padding:4px 12px;border-radius:8px;max-width:80vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* review table */
 #reviewTable td input{width:100%;padding:4px 6px;font-size:13px;border-radius:5px}
@@ -297,6 +314,11 @@ tr.gchild td:first-child{padding-left:32px}
   </div>
 
   <div class="frow"><div>
+    <label>Contents — paste in what was included (items, quantities, batch/lot numbers…)</label>
+    <textarea id="ordContents" rows="3" placeholder="e.g. 2x Semaglutide 5mg, 1x Bac water, lot #A123"></textarea>
+  </div></div>
+
+  <div class="frow"><div>
     <label>Photos — receipts, screenshots (multiple allowed)</label>
     <div class="filestrip" id="ordPhotoStrip"></div>
   </div></div>
@@ -314,29 +336,9 @@ tr.gchild td:first-child{padding-left:32px}
   </div></div>
 
   <div class="testingblock">
-    <h4>🧪 Testing</h4>
-    <div class="frow">
-      <div><label>Lab</label><input id="testLab" placeholder="e.g. Janoshik, Attest"></div>
-      <div><label>Sample carrier</label><select id="testCarrier">
-        <option>FedEx</option><option>UPS</option><option>USPS</option><option>DHL</option><option>Other</option>
-      </select></div>
-      <div><label>Sample tracking number</label><input id="testTracking" placeholder="1Z999AA10123456784"></div>
-    </div>
-    <div class="frow">
-      <div><label>Group testing facilitator (website)</label><input id="testFacilitator" placeholder="https://…"></div>
-    </div>
-    <div class="frow">
-      <div><label>Results</label><textarea id="testResults" rows="2" placeholder="Purity %, contaminants, link to report…"></textarea></div>
-    </div>
-    <div class="frow"><div>
-      <label>Results files — lab report (PDF or image, multiple allowed)</label>
-      <div class="filestrip" id="testResultFileStrip"></div>
-    </div></div>
+    <h4>🧪 Testing — each purchase can have multiple independent lab tests</h4>
+    <div id="testsContainer"></div>
     <input type="file" id="testResultFile" accept=".pdf,image/*" multiple style="display:none">
-    <div class="frow"><div>
-      <label>Testing progress — click a step to mark it reached</label>
-      <div class="stepper" id="testStepper"></div>
-    </div></div>
   </div>
 
   <div class="mfoot">
@@ -392,6 +394,16 @@ tr.gchild td:first-child{padding-left:32px}
   </div>
 </div></div>
 
+<div class="overlay" id="lightboxOverlay">
+  <div class="lightbox">
+    <button class="lbclose" id="lightboxClose" title="Close">✕</button>
+    <button class="lbnav lbprev" id="lightboxPrev" title="Previous">‹</button>
+    <img id="lightboxImg" alt="">
+    <button class="lbnav lbnext" id="lightboxNext" title="Next">›</button>
+    <div class="lbcaption" id="lightboxCaption"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -430,6 +442,20 @@ if(Array.isArray(db.orders)){
     if(o.photo && !o.photos){ o.photos = [{name:'photo', data:o.photo}]; delete o.photo; changed = true; }
     if(!o.photos){ o.photos = []; changed = true; }
     if(!o.coas){ o.coas = []; changed = true; }
+  });
+  if(changed) saveOrders();
+})();
+// One-time migration: single `testing` object -> `tests` array (multiple independent lab tests per order).
+(function migrateOrderTests(){
+  let changed = false;
+  ordersDb.orders.forEach(o=>{
+    if(!Array.isArray(o.tests)){
+      const t = o.testing;
+      const hasData = t && (t.lab || t.sampleTrackingNumber || t.facilitatorUrl || t.results || (t.resultsFiles&&t.resultsFiles.length) || t.status);
+      o.tests = hasData ? [Object.assign({id:uid()}, t)] : [];
+      delete o.testing;
+      changed = true;
+    }
   });
   if(changed) saveOrders();
 })();
@@ -725,6 +751,46 @@ function resolveOrderContact(o){
   const match = opts.find(x=>x.value===o.contactRef);
   return match || opts[0] || null;
 }
+/* Fallback photo for an order that has no receipt photo of its own — prefers the
+   specific vendor contact used on the order, then the vendor's own photo, then any
+   contact's photo, so the grid isn't stuck showing a generic 📦 for most orders. */
+function resolveOrderPhoto(o){
+  if(!o.vendorId) return null;
+  const vendor = db.vendors.find(x=>x.id===o.vendorId);
+  if(!vendor) return null;
+  if(o.contactRef && o.contactRef!=='company'){
+    const c = (vendor.contacts||[])[+o.contactRef.slice(1)];
+    if(c && c.photo) return c.photo;
+  }
+  if(vendor.photo) return vendor.photo;
+  const withPhoto = (vendor.contacts||[]).find(c=>c.photo);
+  return withPhoto ? withPhoto.photo : null;
+}
+let lightboxImages = [], lightboxIndex = 0;
+function openLightbox(images, index){
+  if(!images || !images.length) return;
+  lightboxImages = images; lightboxIndex = index;
+  renderLightbox();
+  $('#lightboxOverlay').classList.add('open');
+}
+function renderLightbox(){
+  const item = lightboxImages[lightboxIndex];
+  $('#lightboxImg').src = item.data;
+  const multi = lightboxImages.length>1;
+  $('#lightboxCaption').textContent = multi ? `${lightboxIndex+1} / ${lightboxImages.length}${item.name?' · '+item.name:''}` : (item.name||'');
+  $('#lightboxPrev').style.display = multi ? '' : 'none';
+  $('#lightboxNext').style.display = multi ? '' : 'none';
+}
+function imageItems(items){ return (items||[]).filter(it=>(it.type||'').startsWith('image/')); }
+$('#lightboxClose').onclick = ()=>$('#lightboxOverlay').classList.remove('open');
+$('#lightboxPrev').onclick = ()=>{ lightboxIndex = (lightboxIndex-1+lightboxImages.length)%lightboxImages.length; renderLightbox(); };
+$('#lightboxNext').onclick = ()=>{ lightboxIndex = (lightboxIndex+1)%lightboxImages.length; renderLightbox(); };
+document.addEventListener('keydown', e=>{
+  if(!$('#lightboxOverlay').classList.contains('open')) return;
+  if(e.key==='Escape') $('#lightboxOverlay').classList.remove('open');
+  if(e.key==='ArrowLeft') $('#lightboxPrev').click();
+  if(e.key==='ArrowRight') $('#lightboxNext').click();
+});
 function readFileRaw(file, cb){
   const r = new FileReader();
   r.onload = ()=>cb({name:file.name, data:r.result, type:file.type||''});
@@ -756,13 +822,17 @@ function renderOrders(){
     const photos = o.photos || [];
     const coas = o.coas || [];
     const contact = resolveOrderContact(o);
-    const testing = o.testing || {};
-    const sampleTrackUrl = trackingUrl(testing.sampleCarrier, testing.sampleTrackingNumber);
+    const tests = o.tests || [];
+    const vendorPhoto = resolveOrderPhoto(o);
+    const thumbSrc = vendorPhoto || (photos[0] && photos[0].data);
+    const thumbBadge = vendorPhoto
+      ? (photos.length ? `<span class="pcount">📷${photos.length}</span>` : '')
+      : (photos.length>1 ? `<span class="pcount">+${photos.length-1}</span>` : '');
     const card = document.createElement('div');
     card.className = 'ordcard';
     card.innerHTML = `
       <div class="ordhead">
-        <div class="ordphoto" data-editord="${o.id}" title="${photos.length?'View/edit photos':'Add photos'}">${photos.length?`<img src="${photos[0].data}">${photos.length>1?`<span class="pcount">+${photos.length-1}</span>`:''}`:'📦'}</div>
+        <div class="ordphoto" ${photos.length?`data-viewphotos="${o.id}"`:`data-editord="${o.id}"`} title="${photos.length?'Click to view full-size':'Add photos'}">${thumbSrc?`<img src="${thumbSrc}">`:'📦'}${thumbBadge}</div>
         <div>
           <div class="ordname">${vendor?esc(vendor.name):'Order'}${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank">${esc(o.trackingNumber)}</a>`:esc(o.trackingNumber)}</span>`:''}</div>
           <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${o.createdAt?' · '+esc(o.createdAt):''}</div>
@@ -770,14 +840,19 @@ function renderOrders(){
         </div>
       </div>
       <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(ORDER_STAGES, stageIndex(o.status), o.stageDates, o.id)}</div>
-      <div class="testingblock">
-        <h4>🧪 Testing${testing.lab?' · '+esc(testing.lab):''}</h4>
-        <div class="stepper" data-teststepper="${o.id}">${stepperHtml(TEST_STAGES, testStageIndex(testing.status), testing.stageDates, 'test-'+o.id)}</div>
-        ${testing.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(testing.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank">${esc(testing.sampleTrackingNumber)}</a>`:esc(testing.sampleTrackingNumber)}</div>`:''}
-        ${testing.facilitatorUrl?`<div class="ordmeta">Facilitator: <a href="${esc(normalizeUrl(testing.facilitatorUrl))}" target="_blank">${esc(testing.facilitatorUrl)}</a></div>`:''}
-        ${testing.results?`<div class="ordmeta">Results: ${esc(testing.results)}</div>`:''}
-        ${(testing.resultsFiles||[]).length?`<div class="ordmeta">Report: ${testing.resultsFiles.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
-      </div>
+      ${o.contents?`<div class="ordmeta" style="white-space:pre-wrap">Contents: ${esc(o.contents)}</div>`:''}
+      ${photos.length?`<div class="ordphotostrip">${photos.map((p,pi)=>`<div class="ordthumb" data-vop="${o.id}" data-vopidx="${pi}" title="Click to view full-size"><img src="${p.data}"></div>`).join('')}</div>`:''}
+      ${tests.map((t,ti)=>{
+        const sampleTrackUrl = trackingUrl(t.sampleCarrier, t.sampleTrackingNumber);
+        return `<div class="testingblock">
+        <h4>🧪 Test ${ti+1}${t.lab?' · '+esc(t.lab):''}</h4>
+        <div class="stepper" data-teststepper="${o.id}" data-testidx="${ti}">${stepperHtml(TEST_STAGES, testStageIndex(t.status), t.stageDates, 'test-'+o.id+'-'+ti)}</div>
+        ${t.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(t.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank">${esc(t.sampleTrackingNumber)}</a>`:esc(t.sampleTrackingNumber)}</div>`:''}
+        ${t.facilitatorUrl?`<div class="ordmeta">Facilitator: <a href="${esc(normalizeUrl(t.facilitatorUrl))}" target="_blank">${esc(t.facilitatorUrl)}</a></div>`:''}
+        ${t.results?`<div class="ordmeta">Results: ${esc(t.results)}</div>`:''}
+        ${(t.resultsFiles||[]).length?`<div class="ordmeta">Report: ${t.resultsFiles.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
+      </div>`;
+      }).join('')}
       <div class="ordfoot">
         <button class="small" data-wa="${o.id}" ${contact?'':'disabled'} title="${contact?'Message '+esc(contact.name)+' on WhatsApp':'No WhatsApp number on file for this vendor'}">💬 WhatsApp</button>
         <button class="small" data-editord="${o.id}">Edit</button>
@@ -792,6 +867,14 @@ function renderOrders(){
   g.appendChild(add);
 
   g.querySelectorAll('[data-editord]').forEach(b=>b.onclick=()=>openOrderModal(b.dataset.editord));
+  g.querySelectorAll('[data-viewphotos]').forEach(el=>{
+    const o = ordersDb.orders.find(x=>x.id===el.dataset.viewphotos);
+    el.onclick = ()=>openLightbox(o.photos, 0);
+  });
+  g.querySelectorAll('[data-vop]').forEach(el=>{
+    const o = ordersDb.orders.find(x=>x.id===el.dataset.vop);
+    el.onclick = ()=>openLightbox(o.photos, +el.dataset.vopidx);
+  });
   g.querySelectorAll('[data-delord]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this order?')){
     ordersDb.orders = ordersDb.orders.filter(o=>o.id!==b.dataset.delord); saveOrders(); renderOrders(); }});
   g.querySelectorAll('[data-wa]').forEach(b=>{
@@ -812,27 +895,26 @@ function renderOrders(){
   });
   g.querySelectorAll('[data-teststepper]').forEach(el=>{
     const o = ordersDb.orders.find(x=>x.id===el.dataset.teststepper);
+    const t = o.tests[+el.dataset.testidx];
     wireSteppers(el, idx=>{
-      o.testing = o.testing || {};
-      const curIdx = testStageIndex(o.testing.status);
+      const curIdx = testStageIndex(t.status);
       const newIdx = idx===curIdx ? idx-1 : idx;
       if(newIdx<0){
-        delete o.testing.status;
-        o.testing.stageDates = {};
+        t.status = null;
+        t.stageDates = {};
       } else {
-        o.testing.status = TEST_STAGES[newIdx].key;
-        o.testing.stageDates = newIdx>=curIdx ? advanceStageDates(o.testing.stageDates, TEST_STAGES, newIdx) : pruneStageDates(o.testing.stageDates, TEST_STAGES, newIdx);
+        t.status = TEST_STAGES[newIdx].key;
+        t.stageDates = newIdx>=curIdx ? advanceStageDates(t.stageDates, TEST_STAGES, newIdx) : pruneStageDates(t.stageDates, TEST_STAGES, newIdx);
       }
       saveOrders(); renderOrders();
     });
   });
 }
 
-let editingOrderId = null, ordEditStatus = 'ordered', testEditStatus = null, ordPhotos = [], ordCoas = [], testFiles = [];
+let editingOrderId = null, ordEditStatus = 'ordered', ordPhotos = [], ordCoas = [], editTests = [], addFilesForTestIdx = null;
 function openOrderModal(id){
   editingOrderId = id;
   const o = id ? ordersDb.orders.find(x=>x.id===id) : null;
-  const testing = (o && o.testing) || {};
   $('#ordTitle').textContent = o ? 'Edit order' : 'Add order';
   const vsel = $('#ordVendor');
   vsel.innerHTML = '<option value="">—</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
@@ -842,21 +924,15 @@ function openOrderModal(id){
   $('#ordTracking').value = o ? (o.trackingNumber||'') : '';
   $('#ordAmount').value = o && o.paymentAmount!=null ? o.paymentAmount : '';
   $('#ordMethod').value = o ? (o.paymentMethod||'') : '';
+  $('#ordContents').value = o ? (o.contents||'') : '';
   ordPhotos = o && Array.isArray(o.photos) ? JSON.parse(JSON.stringify(o.photos)) : [];
   ordCoas = o && Array.isArray(o.coas) ? JSON.parse(JSON.stringify(o.coas)) : [];
   renderOrdPhotoStrip();
   renderOrdCoaStrip();
   ordEditStatus = o ? (o.status||'ordered') : 'ordered';
   renderOrdStepperPreview();
-  $('#testLab').value = testing.lab || '';
-  $('#testCarrier').value = testing.sampleCarrier || 'FedEx';
-  $('#testTracking').value = testing.sampleTrackingNumber || '';
-  $('#testFacilitator').value = testing.facilitatorUrl || '';
-  $('#testResults').value = testing.results || '';
-  testFiles = Array.isArray(testing.resultsFiles) ? JSON.parse(JSON.stringify(testing.resultsFiles)) : [];
-  renderTestFileStrip();
-  testEditStatus = testing.status || null;
-  renderTestStepperPreview();
+  editTests = o && Array.isArray(o.tests) ? JSON.parse(JSON.stringify(o.tests)) : [];
+  renderTestsContainer();
   $('#orderOverlay').classList.add('open');
 }
 function renderOrdStepperPreview(){
@@ -865,19 +941,91 @@ function renderOrdStepperPreview(){
   el.innerHTML = stepperHtml(ORDER_STAGES, stageIndex(ordEditStatus), dates, 'preview');
   wireSteppers(el, idx=>{ ordEditStatus = ORDER_STAGES[idx].key; renderOrdStepperPreview(); });
 }
-function renderTestStepperPreview(){
-  const el = $('#testStepper');
-  const testing = (editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).testing || {};
-  el.innerHTML = stepperHtml(TEST_STAGES, testStageIndex(testEditStatus), testing.stageDates, 'testpreview');
-  wireSteppers(el, idx=>{ testEditStatus = TEST_STAGES[idx].key; renderTestStepperPreview(); });
+function newTest(){
+  return {id:uid(), lab:'', sampleCarrier:'FedEx', sampleTrackingNumber:'', facilitatorUrl:'', results:'', resultsFiles:[], status:null, stageDates:{}};
 }
+function renderTestsContainer(){
+  const el = $('#testsContainer');
+  el.innerHTML = editTests.map((t,i)=>`
+    <div class="testcard">
+      <div class="testcardhead">
+        <strong>Test ${i+1}${t.lab?' · '+esc(t.lab):''}</strong>
+        <button class="small danger" type="button" data-rmtest="${i}">✕ Remove test</button>
+      </div>
+      <div class="frow">
+        <div><label>Lab</label><input data-tf="lab" data-ti="${i}" value="${esc(t.lab||'')}" placeholder="e.g. Janoshik, Attest"></div>
+        <div><label>Sample carrier</label><select data-tf="sampleCarrier" data-ti="${i}">${['FedEx','UPS','USPS','DHL','Other'].map(c=>`<option${t.sampleCarrier===c?' selected':''}>${c}</option>`).join('')}</select></div>
+        <div><label>Sample tracking number</label><input data-tf="sampleTrackingNumber" data-ti="${i}" value="${esc(t.sampleTrackingNumber||'')}" placeholder="1Z999AA10123456784"></div>
+      </div>
+      <div class="frow">
+        <div><label>Group testing facilitator (website)</label><input data-tf="facilitatorUrl" data-ti="${i}" value="${esc(t.facilitatorUrl||'')}" placeholder="https://…"></div>
+      </div>
+      <div class="frow">
+        <div><label>Results</label><textarea data-tf="results" data-ti="${i}" rows="2" placeholder="Purity %, contaminants, link to report…">${esc(t.results||'')}</textarea></div>
+      </div>
+      <div class="frow"><div>
+        <label>Results files — lab report (PDF or image, multiple allowed)</label>
+        <div class="filestrip" data-testfilestrip="${i}"></div>
+      </div></div>
+      <div class="frow"><div>
+        <label>Testing progress — click a step to mark it reached</label>
+        <div class="stepper" data-teststepperedit="${i}">${stepperHtml(TEST_STAGES, testStageIndex(t.status), t.stageDates, 'testedit'+i)}</div>
+      </div></div>
+    </div>`).join('') + `<div class="newwh" id="addTestBtn" title="Add another independent lab test">+ Add another test</div>`;
+
+  editTests.forEach((t,i)=>renderTestFileStripFor(i));
+
+  el.querySelectorAll('[data-tf]').forEach(input=>{
+    input.oninput = ()=>{ editTests[+input.dataset.ti][input.dataset.tf] = input.value; };
+  });
+  el.querySelectorAll('[data-rmtest]').forEach(b=>b.onclick=()=>{ editTests.splice(+b.dataset.rmtest,1); renderTestsContainer(); });
+  el.querySelectorAll('[data-teststepperedit]').forEach(stepEl=>{
+    const i = +stepEl.dataset.teststepperedit;
+    wireSteppers(stepEl, idx=>{
+      const t = editTests[i];
+      const curIdx = testStageIndex(t.status);
+      const newIdx = idx===curIdx ? idx-1 : idx;
+      if(newIdx<0){ t.status = null; t.stageDates = {}; }
+      else { t.status = TEST_STAGES[newIdx].key; t.stageDates = newIdx>=curIdx ? advanceStageDates(t.stageDates, TEST_STAGES, newIdx) : pruneStageDates(t.stageDates, TEST_STAGES, newIdx); }
+      renderTestsContainer();
+    });
+  });
+  $('#addTestBtn').onclick = ()=>{ editTests.push(newTest()); renderTestsContainer(); };
+}
+function renderTestFileStripFor(i){
+  const el = $(`[data-testfilestrip="${i}"]`);
+  const t = editTests[i];
+  const files = t.resultsFiles || (t.resultsFiles=[]);
+  el.innerHTML = files.map((c,fi)=>{
+    const isImg = (c.type||'').startsWith('image/');
+    const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
+    return `<div class="filetile doc" title="${isImg?'Click to view full-size':esc(c.name)}">${isImg?`<img src="${c.data}" data-viewtestfile="${fi}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmtestfile="${fi}" title="Remove">✕</button></div>`;
+  }).join('') + `<div class="filetile add" data-addtestfile title="Add results file(s)">+</div>`;
+  el.querySelectorAll('[data-rmtestfile]').forEach(b=>b.onclick=()=>{ files.splice(+b.dataset.rmtestfile,1); renderTestFileStripFor(i); });
+  el.querySelectorAll('[data-viewtestfile]').forEach(img=>{
+    const fi = +img.dataset.viewtestfile;
+    img.onclick = ()=>{ const imgs = imageItems(files); openLightbox(imgs, imgs.indexOf(files[fi])); };
+  });
+  el.querySelector('[data-addtestfile]').onclick = ()=>{ addFilesForTestIdx = i; $('#testResultFile').click(); };
+  el.addEventListener('dragover', e=>{e.preventDefault(); el.classList.add('dragover');});
+  el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
+  el.addEventListener('drop', e=>{ e.preventDefault(); el.classList.remove('dragover');
+    if(e.dataTransfer.files.length) addTestFilesTo(i, e.dataTransfer.files); });
+}
+function addTestFilesTo(i, files){
+  Array.from(files).filter(f=>f.type==='application/pdf' || f.type.startsWith('image/')).forEach(f=>{
+    readFileRaw(f, item=>{ editTests[i].resultsFiles.push(item); renderTestFileStripFor(i); });
+  });
+}
+$('#testResultFile').onchange = e=>{ if(e.target.files.length && addFilesForTestIdx!=null) addTestFilesTo(addFilesForTestIdx, e.target.files); e.target.value=''; };
 $('#ordVendor').onchange = ()=>populateContactSelect($('#ordVendor').value, null);
 
 function renderOrdPhotoStrip(){
   const el = $('#ordPhotoStrip');
-  el.innerHTML = ordPhotos.map((p,i)=>`<div class="filetile"><img src="${p.data}"><button class="rm" type="button" data-rmphoto="${i}" title="Remove">✕</button></div>`).join('')
+  el.innerHTML = ordPhotos.map((p,i)=>`<div class="filetile"><img src="${p.data}" data-viewphoto="${i}" title="Click to view full-size"><button class="rm" type="button" data-rmphoto="${i}" title="Remove">✕</button></div>`).join('')
     + `<div class="filetile add" id="ordPhotoAdd" title="Add photo(s)">+</div>`;
   el.querySelectorAll('[data-rmphoto]').forEach(b=>b.onclick=()=>{ ordPhotos.splice(+b.dataset.rmphoto,1); renderOrdPhotoStrip(); });
+  el.querySelectorAll('[data-viewphoto]').forEach(img=>img.onclick=()=>openLightbox(ordPhotos, +img.dataset.viewphoto));
   $('#ordPhotoAdd').onclick = ()=>$('#ordPhotoFile').click();
 }
 function renderOrdCoaStrip(){
@@ -885,14 +1033,18 @@ function renderOrdCoaStrip(){
   el.innerHTML = ordCoas.map((c,i)=>{
     const isImg = (c.type||'').startsWith('image/');
     const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
-    return `<div class="filetile doc" title="${esc(c.name)}">${isImg?`<img src="${c.data}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmcoa="${i}" title="Remove">✕</button></div>`;
+    return `<div class="filetile doc" title="${isImg?'Click to view full-size':esc(c.name)}">${isImg?`<img src="${c.data}" data-viewcoa="${i}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmcoa="${i}" title="Remove">✕</button></div>`;
   }).join('') + `<div class="filetile add" id="ordCoaAdd" title="Add COA(s)">+</div>`;
   el.querySelectorAll('[data-rmcoa]').forEach(b=>b.onclick=()=>{ ordCoas.splice(+b.dataset.rmcoa,1); renderOrdCoaStrip(); });
+  el.querySelectorAll('[data-viewcoa]').forEach(img=>{
+    const i = +img.dataset.viewcoa;
+    img.onclick = ()=>{ const imgs = imageItems(ordCoas); openLightbox(imgs, imgs.indexOf(ordCoas[i])); };
+  });
   $('#ordCoaAdd').onclick = ()=>$('#ordCoaFile').click();
 }
 function addOrdPhotos(files){
   Array.from(files).filter(f=>f.type.startsWith('image/')).forEach(f=>{
-    readImage(f, d=>{ ordPhotos.push({name:f.name, data:d}); renderOrdPhotoStrip(); });
+    readFileRaw(f, item=>{ ordPhotos.push(item); renderOrdPhotoStrip(); });
   });
 }
 function addOrdCoas(files){
@@ -900,25 +1052,9 @@ function addOrdCoas(files){
     readFileRaw(f, item=>{ ordCoas.push(item); renderOrdCoaStrip(); });
   });
 }
-function renderTestFileStrip(){
-  const el = $('#testResultFileStrip');
-  el.innerHTML = testFiles.map((c,i)=>{
-    const isImg = (c.type||'').startsWith('image/');
-    const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
-    return `<div class="filetile doc" title="${esc(c.name)}">${isImg?`<img src="${c.data}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmtestfile="${i}" title="Remove">✕</button></div>`;
-  }).join('') + `<div class="filetile add" id="testResultFileAdd" title="Add results file(s)">+</div>`;
-  el.querySelectorAll('[data-rmtestfile]').forEach(b=>b.onclick=()=>{ testFiles.splice(+b.dataset.rmtestfile,1); renderTestFileStrip(); });
-  $('#testResultFileAdd').onclick = ()=>$('#testResultFile').click();
-}
-function addTestFiles(files){
-  Array.from(files).filter(f=>f.type==='application/pdf' || f.type.startsWith('image/')).forEach(f=>{
-    readFileRaw(f, item=>{ testFiles.push(item); renderTestFileStrip(); });
-  });
-}
 $('#ordPhotoFile').onchange = e=>{ if(e.target.files.length) addOrdPhotos(e.target.files); e.target.value=''; };
 $('#ordCoaFile').onchange = e=>{ if(e.target.files.length) addOrdCoas(e.target.files); e.target.value=''; };
-$('#testResultFile').onchange = e=>{ if(e.target.files.length) addTestFiles(e.target.files); e.target.value=''; };
-[['#ordPhotoStrip', ()=>addOrdPhotos], ['#ordCoaStrip', ()=>addOrdCoas], ['#testResultFileStrip', ()=>addTestFiles]].forEach(([sel, getAdd])=>{
+[['#ordPhotoStrip', ()=>addOrdPhotos], ['#ordCoaStrip', ()=>addOrdCoas]].forEach(([sel, getAdd])=>{
   const el = $(sel);
   el.addEventListener('dragover', e=>{e.preventDefault(); el.classList.add('dragover');});
   el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
@@ -930,17 +1066,7 @@ $('#ordCancel').onclick = ()=>$('#orderOverlay').classList.remove('open');
 $('#ordSave').onclick = ()=>{
   const num = v => v===''?null:parseFloat(v);
   const existing = editingOrderId ? ordersDb.orders.find(x=>x.id===editingOrderId) : null;
-  const testIdx = testStageIndex(testEditStatus);
-  const testing = {
-    lab: $('#testLab').value.trim(),
-    sampleCarrier: $('#testCarrier').value,
-    sampleTrackingNumber: $('#testTracking').value.trim(),
-    facilitatorUrl: $('#testFacilitator').value.trim(),
-    results: $('#testResults').value.trim(),
-    resultsFiles: testFiles,
-    status: testEditStatus,
-    stageDates: testIdx>=0 ? advanceStageDates((existing&&existing.testing||{}).stageDates, TEST_STAGES, testIdx) : ((existing&&existing.testing||{}).stageDates||{})
-  };
+  editTests.forEach(t=>{ t.lab=t.lab.trim(); t.sampleTrackingNumber=t.sampleTrackingNumber.trim(); t.facilitatorUrl=t.facilitatorUrl.trim(); t.results=t.results.trim(); });
   const data = {
     vendorId: $('#ordVendor').value || null,
     contactRef: $('#ordContact').disabled ? null : ($('#ordContact').value || null),
@@ -948,10 +1074,11 @@ $('#ordSave').onclick = ()=>{
     trackingNumber: $('#ordTracking').value.trim(),
     paymentAmount: num($('#ordAmount').value),
     paymentMethod: $('#ordMethod').value.trim(),
+    contents: $('#ordContents').value.trim(),
     photos: ordPhotos,
     coas: ordCoas,
     status: ordEditStatus,
-    testing: testing
+    tests: editTests
   };
   const idx = stageIndex(ordEditStatus);
   if(existing){
