@@ -56,8 +56,14 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 
 /* vendor cards */
 #vendorGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.vcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.vcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;position:relative}
 .vcard.dragover{border-color:var(--accent);background:var(--panel2)}
+.vcard.banished{opacity:.45;filter:grayscale(85%)}
+.vcard.banished::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:14px;
+  background:
+    linear-gradient(to bottom right, transparent calc(50% - 1.5px), var(--danger) calc(50% - 1.5px), var(--danger) calc(50% + 1.5px), transparent calc(50% + 1.5px)),
+    linear-gradient(to top right, transparent calc(50% - 1.5px), var(--danger) calc(50% - 1.5px), var(--danger) calc(50% + 1.5px), transparent calc(50% + 1.5px));}
+.banishedtag{position:absolute;top:10px;right:10px;background:var(--danger);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:6px;padding:2px 7px;z-index:1}
 .vhead{display:flex;gap:12px;align-items:center}
 .vphoto{width:56px;height:56px;border-radius:12px;background:var(--panel2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);overflow:hidden;flex-shrink:0;cursor:pointer}
 .vphoto img{width:100%;height:100%;object-fit:cover}
@@ -130,6 +136,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .offer.best{border-color:var(--best);background:var(--bestbg)}
 .offer.best .p{color:var(--best)}
 .offer.pinned{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.offer.banished{opacity:.45;filter:grayscale(85%);cursor:not-allowed}
 .pinbadge{display:inline-block;background:var(--pinbg);color:var(--accent2);font-size:10px;font-weight:800;letter-spacing:.05em;border-radius:5px;padding:1px 5px;margin-bottom:2px}
 .badge{display:inline-block;background:var(--bestbg);color:var(--best);font-size:10px;font-weight:800;letter-spacing:.05em;border-radius:5px;padding:1px 5px;margin-bottom:2px}
 .prodname{font-weight:700}
@@ -191,6 +198,7 @@ tr.gchild td:first-child{padding-left:32px}
 .vcost:hover{border-color:var(--accent2)}
 .vcost.cheapest{border-color:var(--best);box-shadow:0 0 0 1px var(--best)}
 .vcost.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.vcost.banished{opacity:.45;filter:grayscale(85%)}
 .vcost .vn{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent2)}
 .vcost .tot{font-size:22px;font-weight:800;margin-top:4px}
 .vcost .sub{color:var(--muted);font-size:13px}
@@ -274,6 +282,9 @@ tr.gchild td:first-child{padding-left:32px}
     <button class="small" id="vmAddContact" type="button">＋ Add employee</button>
   </div></div>
   <input type="file" id="vmPhotoFile" accept="image/*" style="display:none">
+  <div class="frow"><div>
+    <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="vmBanished" style="width:auto"> 🚫 Banish this vendor (keeps their data, but grays them out with a red X everywhere)</label>
+  </div></div>
   <div class="mfoot">
     <button id="vmCancel">Cancel</button>
     <button class="primary" id="vmSave">Save vendor</button>
@@ -476,6 +487,7 @@ function toast(m, sticky, isErr){
 function toastErr(m){ toast(m, true, true); }
 function toastHide(){ const t=$('#toast'); clearTimeout(t._h); t.style.display='none'; }
 function vendorOf(wh){ return db.vendors.find(v=>v.id===wh.vendorId); }
+function isBanished(wh){ const v = vendorOf(wh); return !!(v&&v.banished); }
 
 /* ============ vendors ============ */
 let editingVendorId = null, vmPhotoData = null, vmContacts = [];
@@ -507,11 +519,13 @@ $('#vmAddContact').onclick = ()=>{ vmContacts.push({name:'', phone:'', photo:nul
 function renderVendors(){
   const g = $('#vendorGrid');
   g.innerHTML = '';
-  for(const v of db.vendors){
+  const sortedVendors = db.vendors.slice().sort((a,b)=>(a.banished?1:0)-(b.banished?1:0));
+  for(const v of sortedVendors){
     const whs = db.warehouses.filter(w=>w.vendorId===v.id);
     const card = document.createElement('div');
-    card.className = 'vcard';
+    card.className = 'vcard' + (v.banished ? ' banished' : '');
     card.innerHTML = `
+      ${v.banished ? '<div class="banishedtag">Banished</div>' : ''}
       <div class="vhead">
         <div class="vphoto" data-vid="${v.id}">${v.photo?`<img src="${v.photo}">`:'📷'}</div>
         <div>
@@ -632,6 +646,7 @@ function openVendorModal(id){
   renderVmContacts();
   $('#vmPhoto').innerHTML = v&&v.photo ? `<img src="${v.photo}">` : '<span>📷</span>';
   if(v&&v.photo) vmPhotoData = v.photo;
+  $('#vmBanished').checked = !!(v&&v.banished);
   $('#vendorOverlay').classList.add('open');
 }
 $('#vmCancel').onclick = ()=>$('#vendorOverlay').classList.remove('open');
@@ -640,7 +655,7 @@ $('#vmSave').onclick = ()=>{
   const contacts = vmContacts
     .map(c=>({name:(c.name||'').trim(), phone:(c.phone||'').trim(), photo:c.photo||null}))
     .filter(c=>c.name||c.phone);
-  const data = {name, phone:$('#vmPhone').value.trim(), site:$('#vmSite').value.trim(), contacts, photo:vmPhotoData};
+  const data = {name, phone:$('#vmPhone').value.trim(), site:$('#vmSite').value.trim(), contacts, photo:vmPhotoData, banished:$('#vmBanished').checked};
   if(editingVendorId){ Object.assign(db.vendors.find(v=>v.id===editingVendorId), data); }
   else db.vendors.push(Object.assign({id:uid()}, data));
   save(); $('#vendorOverlay').classList.remove('open'); renderAll();
@@ -1415,14 +1430,17 @@ function renderResults(){
   }
   const chipData = [];
   const rowFor = (e, cls)=>{
-    const sorted = [...e.offers].sort((a,b)=>a.price-b.price);
-    const best = sorted[0].price;
+    const sorted = [...e.offers].sort((a,b)=> (isBanished(a.wh)-isBanished(b.wh)) || (a.price-b.price));
+    const activeSorted = sorted.filter(o=>!isBanished(o.wh));
+    const best = activeSorted.length ? activeSorted[0].price : null;
     const inCart = db.cart.find(c=>cat.lookup.get(normKey(c.name,c.spec))===cat.lookup.get(normKey(e.name,e.spec)));
     const chips = sorted.map(o=>{
       const v = vendorOf(o.wh);
-      chipData.push({name:e.name, spec:e.spec, whId:o.wh.id, vlabel:(v?v.name:'?')+' · '+o.wh.name});
+      const banished = isBanished(o.wh);
+      chipData.push({name:e.name, spec:e.spec, whId:o.wh.id, vlabel:(v?v.name:'?')+' · '+o.wh.name, banished});
       const pinned = inCart && inCart.whId===o.wh.id;
-      return `<span class="offer${o.price===best?' best':''}${pinned?' pinned':''}" data-pin="${chipData.length-1}" title="Click to add THIS offer to the cart (pins the item to this warehouse)">${pinned?'<span class="pinbadge">📌 IN CART</span>':(o.price===best?'<span class="badge">BEST</span>':'')}<span class="p">${money(o.price)}</span><span class="v">${esc(v?v.name:'?')} · ${esc(o.wh.name)}${o.code?' · '+esc(o.code):''}</span></span>`;
+      const isBest = !banished && best!=null && o.price===best;
+      return `<span class="offer${isBest?' best':''}${pinned?' pinned':''}${banished?' banished':''}" data-pin="${chipData.length-1}" title="${banished?'This vendor is banished':'Click to add THIS offer to the cart (pins the item to this warehouse)'}">${pinned?'<span class="pinbadge">📌 IN CART</span>':(isBest?'<span class="badge">BEST</span>':'')}<span class="p">${money(o.price)}</span><span class="v">${esc(v?v.name:'?')} · ${esc(o.wh.name)}${o.code?' · '+esc(o.code):''}</span></span>`;
     }).join('');
     return `<tr class="${cls}">
       <td style="min-width:160px"><div class="prodname">${esc(e.name)}</div><div class="prodspec">${esc(e.spec)}</div></td>
@@ -1471,6 +1489,7 @@ function renderResults(){
   });
   el.querySelectorAll('[data-pin]').forEach(s=>s.onclick=()=>{
     const d = chipData[+s.dataset.pin];
+    if(d.banished){ toastErr('This vendor is banished — unbanish them to order from this offer'); return; }
     const grp = cat.lookup.get(normKey(d.name, d.spec));
     const ex = db.cart.find(c=>cat.lookup.get(normKey(c.name,c.spec))===grp);
     if(ex){
@@ -1521,6 +1540,7 @@ function optimize(){
   const whSet = new Map();
   cart.forEach(c=>c.allOffers.forEach(o=>whSet.set(o.wh.id, o.wh)));
   const whs = [...whSet.values()];
+  const activeWhs = whs.filter(w=>!isBanished(w)); // banished vendors are never auto-suggested as the best plan
   // ignorePins: single-vendor plans override pins by definition — a vendor that
   // stocks a pinned item must not be reported as "missing" it
   const evalSubset = (list, ignorePins)=>{
@@ -1552,14 +1572,14 @@ function optimize(){
     if(r.minOk!==best.minOk){ if(r.minOk) best=r; return; }
     if(r.total<best.total) best=r;
   };
-  if(whs.length && whs.length<=14){
-    const n = whs.length;
+  if(activeWhs.length && activeWhs.length<=14){
+    const n = activeWhs.length;
     for(let mask=1; mask<(1<<n); mask++){
-      const list = []; for(let i=0;i<n;i++) if(mask&(1<<i)) list.push(whs[i]);
+      const list = []; for(let i=0;i<n;i++) if(mask&(1<<i)) list.push(activeWhs[i]);
       consider(evalSubset(list));
     }
-  } else if(whs.length){
-    consider(evalSubset(whs));
+  } else if(activeWhs.length){
+    consider(evalSubset(activeWhs));
   }
   // per-single-warehouse comparison cards (with the exact items that vendor lacks);
   // pins are ignored here so "missing" reflects the vendor's real stock
@@ -1580,7 +1600,9 @@ function renderCart(){
       const v = w && vendorOf(w);
       pinNote = w ? `<div style="font-size:12px;color:var(--accent2)">📌 pinned to ${esc(v?v.name:'?')} · ${esc(w.name)} <button class="small" data-unpin="${i}" style="font-size:11px;padding:1px 7px">Unpin</button></div>` : '';
     }
-    const unit = c.offers.length ? Math.min(...c.offers.map(o=>o.price)) : null;
+    const activeOffers = c.whId ? c.offers : c.offers.filter(o=>!isBanished(o.wh));
+    const unitOffers = activeOffers.length ? activeOffers : c.offers;
+    const unit = unitOffers.length ? Math.min(...unitOffers.map(o=>o.price)) : null;
     if(unit!=null) estTotal += unit*c.qty;
     return `
     <div class="cartitem">
@@ -1623,13 +1645,14 @@ function renderCart(){
   }
 
   html += '<h4 style="margin-top:18px">Buy everything from one vendor instead <span class="hint" style="font-weight:400">— click a card to plan the whole order from that vendor</span></h4><div class="vendorcards">';
-  const ranked = singles.filter(s=>s.covered>0).sort((a,b)=> (b.covered-a.covered) || (a.total-b.total));
-  const fullBest = ranked.find(s=>s.missing===0);
+  const ranked = singles.filter(s=>s.covered>0).sort((a,b)=> (isBanished(a.wh)-isBanished(b.wh)) || (b.covered-a.covered) || (a.total-b.total));
+  const fullBest = ranked.find(s=>s.missing===0 && !isBanished(s.wh)); // banished vendors are never marked cheapest
   for(const s of ranked){
     const v = vendorOf(s.wh);
+    const banished = isBanished(s.wh);
     const missNames = s.missingItems.map(m=>m.name+(m.spec?' '+m.spec:''));
     const shown = missNames.slice(0,3).map(esc).join(', ') + (missNames.length>3?` +${missNames.length-3} more`:'');
-    html += `<div class="vcost${fullBest&&s===fullBest?' cheapest':''}${sel&&sel.wh.id===s.wh.id?' selected':''}" data-selwh="${s.wh.id}" title="Click to plan the whole order from this vendor">
+    html += `<div class="vcost${fullBest&&s===fullBest?' cheapest':''}${sel&&sel.wh.id===s.wh.id?' selected':''}${banished?' banished':''}" data-selwh="${s.wh.id}" title="Click to plan the whole order from this vendor">
       <div class="vn">${esc(v?v.name:'?')} · ${esc(s.wh.name)}${fullBest&&s===fullBest?'<span class="chip">CHEAPEST</span>':''}${sel&&sel.wh.id===s.wh.id?'<span class="chip" style="background:rgba(249,115,22,.15);color:var(--accent2)">SELECTED</span>':''}</div>
       <div class="sub">Subtotal: ${money(s.itemsTotal)}<br>+ Shipping ${s.ship?money(s.ship):(s.wh.shippingCost==null?'—':'FREE')}</div>
       <div class="tot">${money(s.total)}${s.missing?`<span class="hint" style="font-size:12px;font-weight:400"> for ${s.covered}/${cart.length} items</span>`:''}</div>
