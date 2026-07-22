@@ -214,6 +214,12 @@ tr.gchild td:first-child{padding-left:32px}
 .empty{border:1px dashed var(--border);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* privacy blur — names, WhatsApp numbers, tracking numbers, faces */
+body.blur-on .vname, body.blur-on .wa, body.blur-on .pii{filter:blur(3px);transition:filter .15s}
+body.blur-on .vphoto img, body.blur-on .cphoto img, body.blur-on img.pii-photo{filter:blur(2px);transition:filter .15s}
+body.blur-on .vname:hover, body.blur-on .wa:hover, body.blur-on .pii:hover,
+body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img.pii-photo:hover{filter:blur(0);transition:filter .15s linear .3s}
 </style>
 </head>
 <body>
@@ -388,6 +394,9 @@ tr.gchild td:first-child{padding-left:32px}
     <label>Model</label>
     <input id="setModel" placeholder="claude-sonnet-5">
   </div></div>
+  <div class="frow"><div>
+    <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="setBlur" style="width:auto"> 🙈 Blur sensitive data (names, WhatsApp numbers, tracking numbers, faces) — handy before sharing a screenshot</label>
+  </div></div>
   <p class="hint">Your key never leaves this browser except to call api.anthropic.com directly. All vendor/price data is stored in this browser's localStorage — use Export regularly to back up.</p>
   <div class="mfoot">
     <button id="setCancel">Cancel</button>
@@ -426,7 +435,7 @@ let db = load();
 function load(){
   try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors) return d; }catch(e){}
   try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
-  return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5'}};
+  return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5', blurSensitive:false}};
 }
 function save(){ localStorage.setItem(DBKEY, JSON.stringify(db)); }
 
@@ -488,6 +497,14 @@ function toastErr(m){ toast(m, true, true); }
 function toastHide(){ const t=$('#toast'); clearTimeout(t._h); t.style.display='none'; }
 function vendorOf(wh){ return db.vendors.find(v=>v.id===wh.vendorId); }
 function isBanished(wh){ const v = vendorOf(wh); return !!(v&&v.banished); }
+/* A vendor with no photo of its own falls back to its first employee's photo
+   (in contact order), so the card isn't stuck showing a generic 📷 whenever
+   only an employee photo was ever captured. */
+function vendorDisplayPhoto(v){
+  if(v.photo) return v.photo;
+  const withPhoto = (v.contacts||[]).find(c=>c.photo);
+  return withPhoto ? withPhoto.photo : null;
+}
 
 /* ============ vendors ============ */
 let editingVendorId = null, vmPhotoData = null, vmContacts = [];
@@ -527,14 +544,14 @@ function renderVendors(){
     card.innerHTML = `
       ${v.banished ? '<div class="banishedtag">Banished</div>' : ''}
       <div class="vhead">
-        <div class="vphoto" data-vid="${v.id}">${v.photo?`<img src="${v.photo}">`:'📷'}</div>
+        <div class="vphoto" data-vid="${v.id}">${vendorDisplayPhoto(v)?`<img src="${vendorDisplayPhoto(v)}">`:'📷'}</div>
         <div>
           <div class="vname">${esc(v.name)}</div>
           <div class="vphone">${v.phone?`<a class="wa" target="_blank" href="${waLink(v.phone)}">🟢 ${esc(v.phone)}</a>`:''}</div>
           ${v.site?`<a href="${/^https?:/.test(v.site)?esc(v.site):'https://'+esc(v.site)}" target="_blank" style="font-size:13px">${esc(v.site)}</a>`:''}
         </div>
       </div>
-      <div>${(v.contacts||[]).map((c,ci)=>`<div class="contactrow"><span class="who"><span class="cphoto" data-cph="${v.id}:${ci}" title="Click to set this person's photo">${c.photo?`<img src="${c.photo}">`:'👤'}</span>${esc(c.name)}</span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
+      <div>${(v.contacts||[]).map((c,ci)=>`<div class="contactrow"><span class="who"><span class="cphoto" data-cph="${v.id}:${ci}" title="Click to set this person's photo">${c.photo?`<img src="${c.photo}">`:'👤'}</span><span class="pii">${esc(c.name)}</span></span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
       <div>${whs.map(w=>`<div class="whrow" data-whdrop="${w.id}" title="Drop a price list (CSV/XLSX/PDF/image) here to update ${esc(w.name)}"><span>🏭 ${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
         <span><button class="small" data-upwh="${w.id}" title="Upload a price list to this warehouse">⇩ Upload</button> <button class="small" data-editwh="${w.id}">Edit</button> <button class="small danger" data-delwh="${w.id}">✕</button></span></div>`).join('')}
       <div class="newwh" data-newwh="${v.id}" title="Creates a new warehouse for ${esc(v.name)} from the dropped file">⇩ New warehouse — drop a price list or click</div></div>
@@ -847,9 +864,9 @@ function renderOrders(){
     card.className = 'ordcard';
     card.innerHTML = `
       <div class="ordhead">
-        <div class="ordphoto" ${photos.length?`data-viewphotos="${o.id}"`:`data-editord="${o.id}"`} title="${photos.length?'Click to view full-size':'Add photos'}">${thumbSrc?`<img src="${thumbSrc}">`:'📦'}${thumbBadge}</div>
+        <div class="ordphoto" ${photos.length?`data-viewphotos="${o.id}"`:`data-editord="${o.id}"`} title="${photos.length?'Click to view full-size':'Add photos'}">${thumbSrc?`<img class="${vendorPhoto?'pii-photo':''}" src="${thumbSrc}">`:'📦'}${thumbBadge}</div>
         <div>
-          <div class="ordname">${vendor?esc(vendor.name):'Order'}${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank">${esc(o.trackingNumber)}</a>`:esc(o.trackingNumber)}</span>`:''}</div>
+          <div class="ordname"><span class="pii">${vendor?esc(vendor.name):'Order'}</span>${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank" class="pii">${esc(o.trackingNumber)}</a>`:`<span class="pii">${esc(o.trackingNumber)}</span>`}</span>`:''}</div>
           <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${o.createdAt?' · '+esc(o.createdAt):''}</div>
           ${coas.length?`<div class="ordmeta">COA: ${coas.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
         </div>
@@ -862,7 +879,7 @@ function renderOrders(){
         return `<div class="testingblock">
         <h4>🧪 Test ${ti+1}${t.lab?' · '+esc(t.lab):''}</h4>
         <div class="stepper" data-teststepper="${o.id}" data-testidx="${ti}">${stepperHtml(TEST_STAGES, testStageIndex(t.status), t.stageDates, 'test-'+o.id+'-'+ti)}</div>
-        ${t.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(t.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank">${esc(t.sampleTrackingNumber)}</a>`:esc(t.sampleTrackingNumber)}</div>`:''}
+        ${t.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(t.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank" class="pii">${esc(t.sampleTrackingNumber)}</a>`:`<span class="pii">${esc(t.sampleTrackingNumber)}</span>`}</div>`:''}
         ${t.facilitatorUrl?`<div class="ordmeta">Facilitator: <a href="${esc(normalizeUrl(t.facilitatorUrl))}" target="_blank">${esc(t.facilitatorUrl)}</a></div>`:''}
         ${t.results?`<div class="ordmeta">Results: ${esc(t.results)}</div>`:''}
         ${(t.resultsFiles||[]).length?`<div class="ordmeta">Report: ${t.resultsFiles.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
@@ -1440,7 +1457,7 @@ function renderResults(){
       chipData.push({name:e.name, spec:e.spec, whId:o.wh.id, vlabel:(v?v.name:'?')+' · '+o.wh.name, banished});
       const pinned = inCart && inCart.whId===o.wh.id;
       const isBest = !banished && best!=null && o.price===best;
-      return `<span class="offer${isBest?' best':''}${pinned?' pinned':''}${banished?' banished':''}" data-pin="${chipData.length-1}" title="${banished?'This vendor is banished':'Click to add THIS offer to the cart (pins the item to this warehouse)'}">${pinned?'<span class="pinbadge">📌 IN CART</span>':(isBest?'<span class="badge">BEST</span>':'')}<span class="p">${money(o.price)}</span><span class="v">${esc(v?v.name:'?')} · ${esc(o.wh.name)}${o.code?' · '+esc(o.code):''}</span></span>`;
+      return `<span class="offer${isBest?' best':''}${pinned?' pinned':''}${banished?' banished':''}" data-pin="${chipData.length-1}" title="${banished?'This vendor is banished':'Click to add THIS offer to the cart (pins the item to this warehouse)'}">${pinned?'<span class="pinbadge">📌 IN CART</span>':(isBest?'<span class="badge">BEST</span>':'')}<span class="p">${money(o.price)}</span><span class="v"><span class="pii">${esc(v?v.name:'?')}</span> · ${esc(o.wh.name)}${o.code?' · '+esc(o.code):''}</span></span>`;
     }).join('');
     return `<tr class="${cls}">
       <td style="min-width:160px"><div class="prodname">${esc(e.name)}</div><div class="prodspec">${esc(e.spec)}</div></td>
@@ -1598,7 +1615,7 @@ function renderCart(){
     if(c.whId){
       const w = db.warehouses.find(x=>x.id===c.whId);
       const v = w && vendorOf(w);
-      pinNote = w ? `<div style="font-size:12px;color:var(--accent2)">📌 pinned to ${esc(v?v.name:'?')} · ${esc(w.name)} <button class="small" data-unpin="${i}" style="font-size:11px;padding:1px 7px">Unpin</button></div>` : '';
+      pinNote = w ? `<div style="font-size:12px;color:var(--accent2)">📌 pinned to <span class="pii">${esc(v?v.name:'?')}</span> · ${esc(w.name)} <button class="small" data-unpin="${i}" style="font-size:11px;padding:1px 7px">Unpin</button></div>` : '';
     }
     const activeOffers = c.whId ? c.offers : c.offers.filter(o=>!isBanished(o.wh));
     const unitOffers = activeOffers.length ? activeOffers : c.offers;
@@ -1620,7 +1637,7 @@ function renderCart(){
   if(plan && plan.assign.size){
     const selV = sel ? vendorOf(sel.wh) : null;
     html += `<div class="plan"><h4>${sel
-      ? `✓ Everything from ${esc(selV?selV.name:'?')} · ${esc(sel.wh.name)} — ${money(sel.total)} total (items ${money(sel.itemsTotal)} + shipping ${money(sel.ship)}) <button class="small" id="backToBest" style="margin-left:8px">← Back to best split</button>`
+      ? `✓ Everything from <span class="pii">${esc(selV?selV.name:'?')}</span> · ${esc(sel.wh.name)} — ${money(sel.total)} total (items ${money(sel.itemsTotal)} + shipping ${money(sel.ship)}) <button class="small" id="backToBest" style="margin-left:8px">← Back to best split</button>`
       : `✓ Best plan — ${money(best.total)} total (items ${money(best.itemsTotal)} + shipping ${money(best.ship)})${best.covered<cart.length?` — ${cart.length-best.covered} item(s) unavailable`:''}${!best.minOk?' — ⚠ a minimum order is not met':''}`}</h4>`;
     if(sel && sel.missingItems.length){
       html += `<div style="color:var(--danger);font-size:13px;margin-bottom:10px">⚠ Not available from this vendor: ${sel.missingItems.map(m=>`<strong>${esc(m.name)}${m.spec?' '+esc(m.spec):''}</strong>`).join(', ')} — order these elsewhere or remove them.</div>`;
@@ -1634,7 +1651,7 @@ function renderCart(){
       const msg = buildWaMessage(a);
       const link = v && v.phone ? waLink(v.phone, msg) : null;
       html += `<div class="planwh">
-        <div class="whn">${esc(v?v.name:'?')} — ${esc(a.wh.name)} · items ${money(a.subtotal)} + shipping ${ship?money(ship):'FREE'}
+        <div class="whn"><span class="pii">${esc(v?v.name:'?')}</span> — ${esc(a.wh.name)} · items ${money(a.subtotal)} + shipping ${ship?money(ship):'FREE'}
         ${a.wh.minOrder!=null&&a.subtotal<a.wh.minOrder?`<span style="color:var(--danger)"> · below ${money(a.wh.minOrder)} minimum</span>`:''}</div>
         <div class="msgbox">${esc(msg)}</div>
         <button class="small" data-copy="${encodeURIComponent(msg)}">Copy message</button>
@@ -1653,7 +1670,7 @@ function renderCart(){
     const missNames = s.missingItems.map(m=>m.name+(m.spec?' '+m.spec:''));
     const shown = missNames.slice(0,3).map(esc).join(', ') + (missNames.length>3?` +${missNames.length-3} more`:'');
     html += `<div class="vcost${fullBest&&s===fullBest?' cheapest':''}${sel&&sel.wh.id===s.wh.id?' selected':''}${banished?' banished':''}" data-selwh="${s.wh.id}" title="Click to plan the whole order from this vendor">
-      <div class="vn">${esc(v?v.name:'?')} · ${esc(s.wh.name)}${fullBest&&s===fullBest?'<span class="chip">CHEAPEST</span>':''}${sel&&sel.wh.id===s.wh.id?'<span class="chip" style="background:rgba(249,115,22,.15);color:var(--accent2)">SELECTED</span>':''}</div>
+      <div class="vn"><span class="pii">${esc(v?v.name:'?')}</span> · ${esc(s.wh.name)}${fullBest&&s===fullBest?'<span class="chip">CHEAPEST</span>':''}${sel&&sel.wh.id===s.wh.id?'<span class="chip" style="background:rgba(249,115,22,.15);color:var(--accent2)">SELECTED</span>':''}</div>
       <div class="sub">Subtotal: ${money(s.itemsTotal)}<br>+ Shipping ${s.ship?money(s.ship):(s.wh.shippingCost==null?'—':'FREE')}</div>
       <div class="tot">${money(s.total)}${s.missing?`<span class="hint" style="font-size:12px;font-weight:400"> for ${s.covered}/${cart.length} items</span>`:''}</div>
       ${s.missing?`<div class="miss" title="${esc(missNames.join(', '))}">Missing ${s.missing}: ${shown}</div>`:''}
@@ -1684,9 +1701,13 @@ $('#cartClose').onclick = ()=>$('#cartOverlay').classList.remove('open');
 $('#cartClear').onclick = ()=>{ if(confirm('Clear cart?')){ db.cart=[]; save(); renderCart(); renderCartCount(); renderResults(); } };
 
 /* ============ settings / export / import ============ */
-$('#settingsBtn').onclick = ()=>{ $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||'claude-sonnet-5'; $('#setOverlay').classList.add('open'); };
+$('#settingsBtn').onclick = ()=>{ $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||'claude-sonnet-5'; $('#setBlur').checked=!!db.settings.blurSensitive; $('#setOverlay').classList.add('open'); };
 $('#setCancel').onclick = ()=>$('#setOverlay').classList.remove('open');
-$('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; save(); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
+$('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; db.settings.blurSensitive=$('#setBlur').checked; save(); applyBlur(db.settings.blurSensitive); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
+
+/* ============ privacy blur ============ */
+function applyBlur(on){ document.body.classList.toggle('blur-on', !!on); }
+applyBlur(db.settings.blurSensitive);
 
 /* Backups are built ALLOWLIST-style: only vendors/warehouses/cart/model are ever
    serialized, so the API key (or any future secret in settings) cannot leak into a
