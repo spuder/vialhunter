@@ -437,7 +437,14 @@ function load(){
   try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
   return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5', blurSensitive:false}};
 }
-function save(){ localStorage.setItem(DBKEY, JSON.stringify(db)); }
+/* localStorage is capped (usually 5-10MB per origin) — once photos/COAs/lab
+   reports fill it up, setItem throws instead of silently failing. Surface that
+   as a toast rather than an uncaught exception that looks like the app broke. */
+function isQuotaError(e){ return e && (e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED' || e.code===22 || e.code===1014); }
+function save(){
+  try{ localStorage.setItem(DBKEY, JSON.stringify(db)); }
+  catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some vendor/contact photos, or Export a backup and clear old data.'); else throw e; }
+}
 
 /* Orders live in their own localStorage key/JSON, deliberately separate from
    vendors/warehouses: price-list data is meant to be shared between people,
@@ -449,7 +456,10 @@ function loadOrders(){
   try{ const d = JSON.parse(localStorage.getItem(ORDERS_KEY)); if(d && Array.isArray(d.orders)) return d; }catch(e){}
   return {orders:[]};
 }
-function saveOrders(){ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
+function saveOrders(){
+  try{ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
+  catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some order photos/COAs/lab reports, or Export orders as a backup and clear old ones.'); else throw e; }
+}
 // One-time migration for anyone who had orders briefly stored inside the main db.
 if(Array.isArray(db.orders)){
   if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
@@ -828,6 +838,28 @@ function readFileRaw(file, cb){
   r.onload = ()=>cb({name:file.name, data:r.result, type:file.type||''});
   r.readAsDataURL(file);
 }
+/* Everything saved here lives as a base64 data URL inside localStorage, which
+   most browsers cap around 5-10MB per origin — a handful of full-resolution
+   phone photos blows that instantly. Downscale images before storing (PDFs
+   can't be shrunk this way, so those still go through raw). */
+function readFileSmart(file, cb){
+  if(!(file.type||'').startsWith('image/')){ readFileRaw(file, cb); return; }
+  const r = new FileReader();
+  r.onload = ()=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const maxDim = 1600;
+      const s = Math.min(1, maxDim/Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      cb({name:file.name, data:c.toDataURL('image/jpeg',.82), type:'image/jpeg'});
+    };
+    img.onerror = ()=>readFileRaw(file, cb);
+    img.src = r.result;
+  };
+  r.readAsDataURL(file);
+}
 function stepperHtml(stages, cur, stageDates, idPrefix){
   return stages.map((s,i)=>{
     const done = cur>=0 && i<=cur;
@@ -1046,7 +1078,7 @@ function renderTestFileStripFor(i){
 }
 function addTestFilesTo(i, files){
   Array.from(files).filter(f=>f.type==='application/pdf' || f.type.startsWith('image/')).forEach(f=>{
-    readFileRaw(f, item=>{ editTests[i].resultsFiles.push(item); renderTestFileStripFor(i); });
+    readFileSmart(f, item=>{ editTests[i].resultsFiles.push(item); renderTestFileStripFor(i); });
   });
 }
 $('#testResultFile').onchange = e=>{ if(e.target.files.length && addFilesForTestIdx!=null) addTestFilesTo(addFilesForTestIdx, e.target.files); e.target.value=''; };
@@ -1076,12 +1108,12 @@ function renderOrdCoaStrip(){
 }
 function addOrdPhotos(files){
   Array.from(files).filter(f=>f.type.startsWith('image/')).forEach(f=>{
-    readFileRaw(f, item=>{ ordPhotos.push(item); renderOrdPhotoStrip(); });
+    readFileSmart(f, item=>{ ordPhotos.push(item); renderOrdPhotoStrip(); });
   });
 }
 function addOrdCoas(files){
   Array.from(files).filter(f=>f.type==='application/pdf' || f.type.startsWith('image/')).forEach(f=>{
-    readFileRaw(f, item=>{ ordCoas.push(item); renderOrdCoaStrip(); });
+    readFileSmart(f, item=>{ ordCoas.push(item); renderOrdCoaStrip(); });
   });
 }
 $('#ordPhotoFile').onchange = e=>{ if(e.target.files.length) addOrdPhotos(e.target.files); e.target.value=''; };
