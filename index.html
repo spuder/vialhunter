@@ -202,6 +202,9 @@ tr.gchild td:first-child{padding-left:32px}
 .vcost .vn{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent2)}
 .vcost .tot{font-size:22px;font-weight:800;margin-top:4px}
 .vcost .sub{color:var(--muted);font-size:13px}
+.vcost .items{list-style:none;margin:6px 0 0;padding:0;font-size:12px;color:var(--muted);border-top:1px dashed var(--border);padding-top:6px}
+.vcost .items li{display:flex;justify-content:space-between;gap:8px;padding:1px 0}
+.vcost .items li span:last-child{white-space:nowrap;color:var(--text)}
 .vcost .miss{color:var(--muted);font-style:italic;font-size:13px;margin-top:4px}
 .chip{display:inline-block;background:var(--bestbg);color:var(--best);font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;margin-left:6px}
 .plan{background:var(--panel2);border:1px solid var(--best);border-radius:12px;padding:14px;margin-top:16px}
@@ -1701,9 +1704,12 @@ function renderCart(){
     const banished = isBanished(s.wh);
     const missNames = s.missingItems.map(m=>m.name+(m.spec?' '+m.spec:''));
     const shown = missNames.slice(0,3).map(esc).join(', ') + (missNames.length>3?` +${missNames.length-3} more`:'');
+    const itemLines = (s.assign.get(s.wh.id)?.lines||[]).map(l=>
+      `<li><span>${esc(l.item.name)}${l.item.spec?' '+esc(l.item.spec):''}${l.item.qty>1?` ×${l.item.qty}`:''}</span><span>${money(l.offer.price*l.item.qty)}</span></li>`).join('');
     html += `<div class="vcost${fullBest&&s===fullBest?' cheapest':''}${sel&&sel.wh.id===s.wh.id?' selected':''}${banished?' banished':''}" data-selwh="${s.wh.id}" title="Click to plan the whole order from this vendor">
       <div class="vn"><span class="pii">${esc(v?v.name:'?')}</span> · ${esc(s.wh.name)}${fullBest&&s===fullBest?'<span class="chip">CHEAPEST</span>':''}${sel&&sel.wh.id===s.wh.id?'<span class="chip" style="background:rgba(249,115,22,.15);color:var(--accent2)">SELECTED</span>':''}</div>
       <div class="sub">Subtotal: ${money(s.itemsTotal)}<br>+ Shipping ${s.ship?money(s.ship):(s.wh.shippingCost==null?'—':'FREE')}</div>
+      ${itemLines?`<ul class="items">${itemLines}</ul>`:''}
       <div class="tot">${money(s.total)}${s.missing?`<span class="hint" style="font-size:12px;font-weight:400"> for ${s.covered}/${cart.length} items</span>`:''}</div>
       ${s.missing?`<div class="miss" title="${esc(missNames.join(', '))}">Missing ${s.missing}: ${shown}</div>`:''}
       ${s.wh.minOrder!=null&&s.itemsTotal<s.wh.minOrder?`<div class="miss" style="color:var(--danger)">Below ${money(s.wh.minOrder)} minimum</div>`:''}
