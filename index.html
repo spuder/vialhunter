@@ -48,6 +48,13 @@ button.navtab.active{background:var(--panel2);border-color:var(--border);color:v
 #searchBar{flex:1;min-width:220px;position:relative}
 #searchInput{width:100%;padding:10px 14px 10px 38px;border-radius:10px;font-size:15px}
 #searchBar::before{content:"⌕";position:absolute;left:13px;top:8px;font-size:19px;color:var(--muted)}
+.vendortoggles{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 4px}
+.vtoggle{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);border-radius:99px;padding:5px 12px;font-size:13px;cursor:pointer;user-select:none}
+.vtoggle:hover{border-color:var(--accent)}
+.vtoggle.active{background:var(--pinbg);border-color:var(--accent);color:var(--text);font-weight:600}
+.vtoggle.banished{opacity:.55}
+.vtoggle.all{font-weight:600}
+.vtoggle.all.active{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
 #cartBtn{position:relative;font-weight:600}
 #cartCount{position:absolute;top:-8px;right:-8px;background:var(--accent);color:var(--onaccent);font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
 main{max-width:1280px;margin:0 auto;padding:22px 20px 80px}
@@ -251,8 +258,8 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
 
     <div class="searchrow">
       <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
-      <select id="vendorFilter" title="Filter results by vendor"><option value="">All vendors</option></select>
     </div>
+    <div id="vendorToggles" class="vendortoggles"></div>
     <h2 id="resultsTitle">All products</h2>
     <div id="results"></div>
   </div>
@@ -1355,7 +1362,7 @@ async function extractMedia(file, mediaType, target){
         max_tokens: 32000,
         messages:[{role:'user', content:[
           mediaBlock,
-          {type:'text', text:'This is a vendor price list (mostly research peptides). Extract every product/price row. Respond with ONLY a MINIFIED JSON object on a single line — no markdown fences, no whitespace, no commentary — shaped as: {"shipping":number|null,"minOrder":number|null,"items":[{"code":string,"name":string,"spec":string,"price":number}]}. "spec" is the size/dose like "5mg" or "10mg x 10 vials". Use null when a value is absent. Prices as plain numbers without currency symbols.'}
+          {type:'text', text:'This is a vendor price list (mostly research peptides). These tables commonly use merged/spanning cells: one product-name cell spans several rows underneath it, each row being a different variant (dose, vial count, or pack size) with its own abbreviation/code, its own specification, and its own price. Treat every row as independent — its code, spec, and price must all come from that same row, read straight across. Never let a value from the merged product-name cell (which may itself mention a size, e.g. a name like "X(50mg)") stand in for or override a row\'s own spec column — the group label describes the product line, not necessarily that row\'s dose. Likewise never let a spec, code, or price bleed into an adjacent row — double check each row\'s values line up horizontally with that row before moving on. Extract every product/price row, one JSON item per row, in top-to-bottom table order. If a table has blank/divider rows between product groups, do not let them shift the row alignment. Respond with ONLY a MINIFIED JSON object on a single line — no markdown fences, no whitespace, no commentary — shaped as: {"shipping":number|null,"minOrder":number|null,"items":[{"code":string,"name":string,"spec":string,"price":number}]}. "spec" is that row\'s own size/dose, e.g. "5mg" or "10mg x 10 vials", read from that row\'s own spec cell only. Use null when a value is absent. Prices as plain numbers without currency symbols.'}
         ]}]
       })
     });
@@ -1459,11 +1466,10 @@ function buildCatalog(){
 
 function renderResults(){
   const q = $('#searchInput').value.trim().toLowerCase();
-  const vf = $('#vendorFilter').value;
   const cat = buildCatalog();
   let entries = cat.entries;
-  if(vf){
-    entries = entries.map(e=>({...e, offers:e.offers.filter(o=>o.wh.vendorId===vf)})).filter(e=>e.offers.length);
+  if(offVendors.size){
+    entries = entries.map(e=>({...e, offers:e.offers.filter(o=>!offVendors.has(o.wh.vendorId))})).filter(e=>e.offers.length);
   }
   if(q){
     const toks = q.split(/\s+/);
@@ -1473,8 +1479,9 @@ function renderResults(){
     });
   }
   entries.sort((a,b)=> a.name.localeCompare(b.name) || (parseNum(a.spec)||0)-(parseNum(b.spec)||0));
-  const vfName = vf ? (db.vendors.find(v=>v.id===vf)||{}).name : null;
-  $('#resultsTitle').textContent = (q ? `Results for “${q}” — ${entries.length} match${entries.length===1?'':'es'}` : `All products (${entries.length})`) + (vfName?` — ${vfName} only`:'');
+  const activeCount = db.vendors.length - offVendors.size;
+  const filterSuffix = offVendors.size ? ` — ${activeCount} of ${db.vendors.length} vendor${db.vendors.length===1?'':'s'}` : '';
+  $('#resultsTitle').textContent = (q ? `Results for “${q}” — ${entries.length} match${entries.length===1?'':'es'}` : `All products (${entries.length})`) + filterSuffix;
   const el = $('#results');
   if(!entries.length){
     el.innerHTML = `<div class="empty">${db.warehouses.some(w=>w.items.length) ? 'No matches.' : 'No price lists yet — add a vendor above, then drop a CSV/Excel/PDF price list.'}</div>`;
@@ -1557,11 +1564,23 @@ function renderResults(){
 const expandedGroups = new Set(); // per-session; groups default to collapsed
 let searchTimer;
 $('#searchInput').addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(renderResults,150); });
-$('#vendorFilter').addEventListener('change', renderResults);
-function refreshVendorFilter(){
-  const sel = $('#vendorFilter'), cur = sel.value;
-  sel.innerHTML = '<option value="">All vendors</option>' + db.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
-  if([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+const offVendors = new Set(); // vendor ids toggled off; empty = show all
+function renderVendorToggles(){
+  const ids = new Set(db.vendors.map(v=>v.id));
+  for(const id of [...offVendors]) if(!ids.has(id)) offVendors.delete(id); // drop stale ids for deleted vendors
+  const el = $('#vendorToggles');
+  const allActive = offVendors.size===0;
+  el.innerHTML = `<span class="vtoggle all${allActive?' active':''}" data-vall>All vendors</span>` +
+    db.vendors.map(v=>{
+      const on = !offVendors.has(v.id);
+      return `<span class="vtoggle pii${on?' active':''}${v.banished?' banished':''}" data-vtoggle="${v.id}" title="${v.banished?'Banished — ':''}Click to ${on?'hide':'show'} ${esc(v.name)}">${esc(v.name)}</span>`;
+    }).join('');
+  el.querySelector('[data-vall]').onclick = ()=>{ offVendors.clear(); renderVendorToggles(); renderResults(); };
+  el.querySelectorAll('[data-vtoggle]').forEach(chip=>chip.onclick = ()=>{
+    const id = chip.dataset.vtoggle;
+    if(offVendors.has(id)) offVendors.delete(id); else offVendors.add(id);
+    renderVendorToggles(); renderResults();
+  });
 }
 
 /* ============ cart & optimizer ============ */
@@ -1819,7 +1838,7 @@ window.addEventListener('hashchange', ()=>setView(location.hash==='#orders'?'ord
 setView(location.hash==='#orders' ? 'orders' : 'vendors');
 
 /* ============ init ============ */
-function renderAll(){ renderVendors(); renderOrders(); refreshVendorFilter(); renderResults(); renderCartCount(); }
+function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderResults(); renderCartCount(); }
 renderAll();
 //JS-END
 </script>
