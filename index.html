@@ -57,6 +57,8 @@ button.navtab.active{background:var(--panel2);border-color:var(--border);color:v
 .vtoggle.all.active{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
 #cartBtn{position:relative;font-weight:600}
 #cartCount{position:absolute;top:-8px;right:-8px;background:var(--accent);color:var(--onaccent);font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
+#syncIndicator{position:relative}
+#syncDot{position:absolute;top:2px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--best);display:none}
 main{max-width:1280px;margin:0 auto;padding:22px 20px 80px}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 12px}
 .hint{color:var(--muted);font-size:13px}
@@ -235,6 +237,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
 <body>
 <header>
   <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="7.5" y="1.5" width="9" height="3.5" rx="1.2" fill="var(--muted)"/><path d="M9.5 5.5v9.7a2.5 2.5 0 0 0 5 0V5.5" fill="none" stroke="var(--text)" stroke-width="1.6" stroke-linecap="round"/><path d="M9.5 11h5v4.2a2.5 2.5 0 0 1-5 0z" fill="var(--accent)"/></svg>Vial<span>Hunter</span></div>
+  <button id="syncIndicator" class="navtab" title="Local storage only — click to set up Supabase sync"><span id="syncIcon">💻</span><span id="syncDot"></span></button>
   <nav class="viewnav">
     <button id="navVendors" class="navtab active">🏪 Vendors</button>
     <button id="navOrders" class="navtab">📦 Orders</button>
@@ -408,9 +411,71 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
     <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="setBlur" style="width:auto"> 🙈 Blur sensitive data (names, WhatsApp numbers, tracking numbers, faces) — handy before sharing a screenshot</label>
   </div></div>
   <p class="hint">Your key never leaves this browser except to call api.anthropic.com directly. All vendor/price data is stored in this browser's localStorage — use Export regularly to back up.</p>
+
+  <h3 style="margin-top:22px">☁ Supabase sync <span class="hint" style="font-weight:400">(optional)</span></h3>
+  <p class="hint" style="margin-bottom:10px">Everything stays in this browser's localStorage by default. Pairing a Supabase project lets you sync vendors, cart, and orders across devices (e.g. a phone and a laptop).</p>
+  <div class="frow"><div>
+    <label>Supabase project URL</label>
+    <input id="setSbUrl" placeholder="https://xxxxxxxx.supabase.co">
+  </div></div>
+  <div class="frow"><div>
+    <label>Supabase anon/public key</label>
+    <input id="setSbKey" type="password" placeholder="eyJhbGciOi…">
+  </div></div>
+  <details class="hint" style="margin:2px 0 14px">
+    <summary style="cursor:pointer;color:var(--text)">Where do I get a Supabase URL and key?</summary>
+    <div style="margin-top:8px;line-height:1.5">
+      1. Create a free project at <b>supabase.com</b> — this app talks directly to your project from your browser; nothing passes through a server of ours.<br>
+      2. In the project's <b>SQL Editor</b>, run:
+      <pre style="white-space:pre-wrap;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px;margin:6px 0;font-size:12px">create table vialhunter_sync (
+  id text primary key default 'default',
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table vialhunter_sync enable row level security;
+create policy "anon full access" on vialhunter_sync
+  for all using (true) with check (true);</pre>
+      3. In <b>Project Settings → API</b>, copy the <b>Project URL</b> and the <b>anon / public key</b> — paste them above.<br>
+      ⚠ Anyone holding this URL + key can read and write this table, so treat them like a password: use a Supabase project dedicated to this app, and don't paste them anywhere untrusted. Same trust model as the Claude API key above — both live only in this browser.
+    </div>
+  </details>
+  <div class="frow"><div><span id="sbStatusText" class="hint">Not connected — data stays in this browser only.</span></div></div>
+  <div class="mfoot" style="justify-content:flex-start">
+    <button id="sbConnectBtn">🔗 Connect / Sync now</button>
+    <button id="sbDisconnectBtn" class="danger" style="display:none">Disconnect</button>
+  </div>
+
+  <details id="sbDiagDetails" style="margin:10px 0 0">
+    <summary style="cursor:pointer;color:var(--text)">🩺 Connection diagnostics</summary>
+    <pre id="sbDiagLog" class="hint" style="margin-top:8px;max-height:180px;overflow-y:auto;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;white-space:pre-wrap;font-size:12px">Click Connect / Sync now to see a step-by-step log here.</pre>
+  </details>
+
+  <details id="sbQrDetails" style="margin:14px 0 0;display:none">
+    <summary style="cursor:pointer;color:var(--text)">📱 Pair another device via QR code</summary>
+    <div style="margin-top:8px">
+      <p class="hint">Scanning this opens VialHunter on that device and pairs it with this same Supabase project — no retyping the key. ⚠ The code <i>is</i> your Supabase URL + key: anyone who scans or screenshots it gets full read/write access to your synced data. Only reveal it in front of the device you're pairing, and never post a screenshot of it.</p>
+      <div id="sbQrRevealWrap"><button id="sbQrRevealBtn">👁 Show QR code</button></div>
+      <div id="sbQrCanvasWrap" style="display:none">
+        <div id="sbQrCanvas" style="display:inline-block;background:#fff;padding:10px;border-radius:8px;line-height:0"></div>
+        <div style="margin-top:8px"><button id="sbQrHideBtn">Hide</button></div>
+      </div>
+    </div>
+  </details>
+
   <div class="mfoot">
     <button id="setCancel">Cancel</button>
     <button class="primary" id="setSave">Save</button>
+  </div>
+</div></div>
+
+<!-- Supabase pairing conflict modal -->
+<div class="overlay" id="sbConflictOverlay"><div class="modal">
+  <h3 id="sbConflictTitle">Sync with Supabase</h3>
+  <p id="sbConflictBody" class="hint"></p>
+  <div class="mfoot">
+    <button id="sbConflictCancel">Cancel</button>
+    <button id="sbConflictLocal">Use this device's data</button>
+    <button class="primary" id="sbConflictRemote">Use remote data</button>
   </div>
 </div></div>
 
@@ -441,11 +506,29 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
 /* ============ state ============ */
 const DBKEY = 'vialhunterDB_v1';
 const OLDKEY = 'peptideCompareDB_v1'; // pre-rename data, migrated on first load
+const SETTINGS_DEFAULTS = {apiKey:'', model:'claude-sonnet-5', blurSensitive:false, supabaseUrl:'', supabaseKey:'', supabaseEnabled:false};
 let db = load();
+
+/* ============ Supabase sync (optional) ============
+   Everything below keeps the app fully static/no-build: supabase-js is lazy-loaded
+   from a CDN only once a project is actually paired. save()/saveOrders() call
+   scheduleSync() on every write, which debounces a full-snapshot upsert to a
+   single row so vendors/cart/orders stay mirrored across devices. */
+const SYNC_META_KEY = 'vialhunterSyncMeta_v1'; // last-synced timestamp/error — not exported, not shareable data
+let syncMeta = (function(){ try{ return JSON.parse(localStorage.getItem(SYNC_META_KEY))||{}; }catch(e){ return {}; } })();
+function saveSyncMeta(){ try{ localStorage.setItem(SYNC_META_KEY, JSON.stringify(syncMeta)); }catch(e){} }
+let suppressSync = false; // true while applying a remote snapshot, so it doesn't immediately echo back
+let syncTimer = null;
+function scheduleSync(){
+  if(!db.settings || !db.settings.supabaseEnabled || suppressSync) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>{ pushToSupabase(true); }, 2000);
+}
+
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors) return d; }catch(e){}
-  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
-  return {vendors:[], warehouses:[], cart:[], settings:{apiKey:'', model:'claude-sonnet-5', blurSensitive:false}};
+  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors){ d.settings = Object.assign({}, SETTINGS_DEFAULTS, d.settings); return d; } }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ d.settings = Object.assign({}, SETTINGS_DEFAULTS, d.settings); localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
+  return {vendors:[], warehouses:[], cart:[], settings:Object.assign({}, SETTINGS_DEFAULTS)};
 }
 /* localStorage is capped (usually 5-10MB per origin) — once photos/COAs/lab
    reports fill it up, setItem throws instead of silently failing. Surface that
@@ -454,6 +537,7 @@ function isQuotaError(e){ return e && (e.name==='QuotaExceededError' || e.name==
 function save(){
   try{ localStorage.setItem(DBKEY, JSON.stringify(db)); }
   catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some vendor/contact photos, or Export a backup and clear old data.'); else throw e; }
+  scheduleSync();
 }
 
 /* Orders live in their own localStorage key/JSON, deliberately separate from
@@ -469,6 +553,7 @@ function loadOrders(){
 function saveOrders(){
   try{ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
   catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some order photos/COAs/lab reports, or Export orders as a backup and clear old ones.'); else throw e; }
+  scheduleSync();
 }
 // One-time migration for anyone who had orders briefly stored inside the main db.
 if(Array.isArray(db.orders)){
@@ -1758,9 +1843,290 @@ $('#cartClose').onclick = ()=>$('#cartOverlay').classList.remove('open');
 $('#cartClear').onclick = ()=>{ if(confirm('Clear cart?')){ db.cart=[]; save(); renderCart(); renderCartCount(); renderResults(); } };
 
 /* ============ settings / export / import ============ */
-$('#settingsBtn').onclick = ()=>{ $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||'claude-sonnet-5'; $('#setBlur').checked=!!db.settings.blurSensitive; $('#setOverlay').classList.add('open'); };
+$('#settingsBtn').onclick = ()=>{
+  $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||'claude-sonnet-5'; $('#setBlur').checked=!!db.settings.blurSensitive;
+  $('#setSbUrl').value=db.settings.supabaseUrl||''; $('#setSbKey').value=db.settings.supabaseKey||'';
+  updateSyncStatusUI();
+  hideQr(); $('#sbQrDetails').open = false;
+  $('#setOverlay').classList.add('open');
+};
 $('#setCancel').onclick = ()=>$('#setOverlay').classList.remove('open');
 $('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; db.settings.blurSensitive=$('#setBlur').checked; save(); applyBlur(db.settings.blurSensitive); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
+
+/* ---- Supabase sync: connect / pair / disconnect ---- */
+/* Diagnostics log shown right in the Settings dialog (not a toast, which can be
+   missed or get overwritten by a later toast call) so a failed connection is
+   always traceable to a concrete step and error, not just "nothing happened". */
+function clearDiag(){ $('#sbDiagLog').textContent = ''; }
+function logDiag(msg){
+  const el = $('#sbDiagLog');
+  const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  el.textContent += (el.textContent ? '\n' : '') + '['+time+'] '+msg;
+  el.scrollTop = el.scrollHeight;
+  $('#sbDiagDetails').open = true;
+}
+function describeError(err){
+  if(!err) return 'Unknown error';
+  if(typeof err === 'string') return err;
+  const parts = [err.message || String(err)];
+  if(err.details) parts.push('details: '+err.details);
+  if(err.hint) parts.push('hint: '+err.hint);
+  if(err.code) parts.push('code: '+err.code);
+  if(err.status) parts.push('status: '+err.status);
+  return parts.join(' | ');
+}
+function loadSupabaseLib(){
+  if(window.supabase && window.supabase.createClient) return Promise.resolve();
+  if(loadSupabaseLib._p) return loadSupabaseLib._p;
+  logDiag('Loading Supabase client library from unpkg…');
+  loadSupabaseLib._p = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js';
+    s.onload = ()=>{ logDiag('✓ Supabase library loaded.'); resolve(); };
+    s.onerror = ()=>{
+      const e = new Error('Could not load the Supabase library — check your internet connection or ad-blocker.');
+      logDiag('✗ '+e.message); reject(e);
+    };
+    document.head.appendChild(s);
+  });
+  return loadSupabaseLib._p;
+}
+let sbClient = null;
+async function getSbClient(url, key){
+  await loadSupabaseLib();
+  if(!sbClient || sbClient._vhUrl!==url || sbClient._vhKey!==key){
+    sbClient = window.supabase.createClient(url, key);
+    sbClient._vhUrl = url; sbClient._vhKey = key;
+  }
+  return sbClient;
+}
+/* Snapshot is allowlist-style, same reasoning as exportPayload(): credentials
+   never ride along inside the very payload they authenticate. */
+function buildSyncPayload(){
+  const s = Object.assign({}, db.settings);
+  delete s.apiKey; delete s.supabaseUrl; delete s.supabaseKey; delete s.supabaseEnabled;
+  return {vendors: db.vendors, warehouses: db.warehouses, cart: db.cart, settings: s, orders: ordersDb.orders};
+}
+function payloadHasData(p){ return !!p && ((p.vendors&&p.vendors.length) || (p.orders&&p.orders.length)); }
+async function fetchRemoteRow(url, key){
+  const client = await getSbClient(url, key);
+  logDiag('Querying vialhunter_sync table at '+url+' …');
+  const {data, error} = await client.from('vialhunter_sync').select('data,updated_at').eq('id','default').maybeSingle();
+  if(error){ logDiag('✗ Query failed: '+describeError(error)); throw error; }
+  logDiag('✓ Query OK — '+(data ? 'existing row found.' : 'no row yet (empty project).'));
+  return data; // null if no row yet
+}
+async function pushToSupabase(silent){
+  if(!db.settings.supabaseEnabled) return;
+  try{
+    const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
+    const nowIso = new Date().toISOString();
+    logDiag('Pushing current data to Supabase…');
+    const {error} = await client.from('vialhunter_sync').upsert({id:'default', data: buildSyncPayload(), updated_at: nowIso});
+    if(error) throw error;
+    logDiag('✓ Push succeeded.');
+    syncMeta.lastSyncedAt = nowIso; syncMeta.lastError = null; saveSyncMeta(); updateSyncStatusUI();
+  }catch(err){
+    const desc = describeError(err);
+    logDiag('✗ Push failed: '+desc);
+    syncMeta.lastError = desc; saveSyncMeta(); updateSyncStatusUI();
+    if(!silent) toastErr('Supabase sync failed: '+desc);
+  }
+}
+function applyRemoteSnapshot(remote){
+  const keep = {apiKey: db.settings.apiKey, supabaseUrl: db.settings.supabaseUrl, supabaseKey: db.settings.supabaseKey, supabaseEnabled: db.settings.supabaseEnabled};
+  suppressSync = true;
+  db.vendors = remote.vendors||[]; db.warehouses = remote.warehouses||[]; db.cart = remote.cart||[];
+  db.settings = Object.assign({}, SETTINGS_DEFAULTS, remote.settings||{}, keep);
+  ordersDb.orders = remote.orders||[];
+  save(); saveOrders();
+  suppressSync = false;
+  renderAll(); applyBlur(db.settings.blurSensitive);
+}
+function fmtSyncTime(iso){
+  if(!iso) return 'never';
+  const d = new Date(iso);
+  return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+function updateSyncStatusUI(){
+  const ind = $('#syncIndicator'), icon = $('#syncIcon'), dot = $('#syncDot');
+  const enabled = !!db.settings.supabaseEnabled;
+  if(ind){
+    // Emoji glyphs are full-color font characters and ignore CSS `color`, so a
+    // green dot badge marks the connected-and-synced state; otherwise no dot at all.
+    if(!enabled){ icon.textContent='💻'; ind.title='Local storage only — click to set up Supabase sync'; dot.style.display='none'; }
+    else if(syncMeta.lastError){ icon.textContent='☁'; ind.title='Supabase sync error: '+syncMeta.lastError+' — click to check settings'; dot.style.display='none'; }
+    else{ icon.textContent='☁'; ind.title='Synced with Supabase — last synced '+fmtSyncTime(syncMeta.lastSyncedAt); dot.style.display='block'; }
+  }
+  const statusText = $('#sbStatusText'), connectBtn = $('#sbConnectBtn'), disconnectBtn = $('#sbDisconnectBtn'), qrDetails = $('#sbQrDetails');
+  if(!statusText) return;
+  if(enabled){
+    statusText.textContent = syncMeta.lastError ? ('⚠ Connected, but last sync failed: '+syncMeta.lastError) : ('✅ Synced — last synced '+fmtSyncTime(syncMeta.lastSyncedAt));
+    connectBtn.textContent = '🔗 Re-sync now';
+    disconnectBtn.style.display = '';
+  } else {
+    statusText.textContent = 'Not connected — data stays in this browser only.';
+    connectBtn.textContent = '🔗 Connect / Sync now';
+    disconnectBtn.style.display = 'none';
+  }
+  if(qrDetails) qrDetails.style.display = enabled ? '' : 'none';
+}
+let sbPending = null; // {url, key, remote} awaiting a conflict-modal decision
+function openSbConflict(title, body, showRemoteBtn){
+  $('#setOverlay').classList.remove('open'); // one modal on screen at a time — two stacked overlays reads as "nothing happened"
+  $('#sbConflictTitle').textContent = title; $('#sbConflictBody').textContent = body;
+  $('#sbConflictRemote').style.display = showRemoteBtn ? '' : 'none';
+  $('#sbConflictLocal').textContent = showRemoteBtn ? "Use this device's data" : 'Yes, migrate';
+  $('#sbConflictOverlay').classList.add('open');
+}
+function closeSbConflict(){ $('#sbConflictOverlay').classList.remove('open'); sbPending = null; }
+/* Shared by the manual Connect button and the QR-code deep-link handler below:
+   decide whether this is a fresh pairing, a migration, or a conflict needing
+   the user's input. */
+async function attemptPairing(url, key){
+  clearDiag();
+  logDiag('Connecting to '+url+' …');
+  db.settings.supabaseUrl = url; db.settings.supabaseKey = key; save();
+  const remote = await fetchRemoteRow(url, key);
+  const remoteHasData = payloadHasData(remote && remote.data);
+  const localHasData = payloadHasData(buildSyncPayload());
+  if(remoteHasData){
+    // Remote already has data (e.g. pairing a second device) — ask which side wins.
+    logDiag('Remote already has data — asking whether to keep local or remote.');
+    sbPending = {url, key, remote: remote.data};
+    openSbConflict('Existing data found in Supabase', 'This Supabase project already has data. Do you want to use the remote data (overwriting what\'s in this browser), or use this device\'s local data (overwriting what\'s in Supabase)?', true);
+  } else if(localHasData){
+    // Remote is empty but this device has local data — offer to migrate it up. There's
+    // no remote data to fall back to here, so the "use remote" option is hidden.
+    logDiag('Local data present, remote is empty — offering to migrate up.');
+    sbPending = {url, key, remote: null, migrateOnly: true};
+    openSbConflict('Migrate local data to Supabase?', 'This Supabase project is empty. Upload this browser\'s vendors/cart/orders to it so other devices can sync with them?', false);
+  } else {
+    logDiag('Nothing to migrate either way — connecting.');
+    db.settings.supabaseEnabled = true; save();
+    await pushToSupabase();
+    if(syncMeta.lastError) logDiag('✗ Connected, but the initial push failed — see above.');
+    else{ logDiag('✓ Connected.'); toast('Connected to Supabase.'); }
+  }
+}
+$('#sbConnectBtn').onclick = async ()=>{
+  const url = $('#setSbUrl').value.trim(), key = $('#setSbKey').value.trim();
+  if(!url || !key){ toastErr('Enter both the Supabase project URL and anon key first.'); return; }
+  const btn = $('#sbConnectBtn'); const prevLabel = btn.textContent; btn.textContent = 'Connecting…'; btn.disabled = true;
+  try{
+    await attemptPairing(url, key);
+  }catch(err){
+    const desc = describeError(err);
+    logDiag('✗ Connect failed: '+desc);
+    toastErr('Could not reach Supabase: '+desc+' — check the diagnostics log below, and that the URL/key/setup SQL are correct.');
+  }finally{
+    btn.textContent = prevLabel; btn.disabled = false; updateSyncStatusUI();
+  }
+};
+// Cancelling or resolving the conflict returns to Settings (rather than leaving the
+// user staring at a bare dimmed backdrop) so the updated status is visible right away.
+$('#sbConflictCancel').onclick = ()=>{ closeSbConflict(); $('#settingsBtn').click(); };
+$('#sbConflictOverlay').addEventListener('click', e=>{ if(e.target===e.currentTarget) $('#sbConflictCancel').click(); });
+$('#sbConflictLocal').onclick = async ()=>{
+  if(!sbPending) return closeSbConflict();
+  const {url, key} = sbPending; closeSbConflict();
+  db.settings.supabaseUrl = url; db.settings.supabaseKey = key; db.settings.supabaseEnabled = true; save();
+  await pushToSupabase();
+  if(!syncMeta.lastError) toast('This device\'s data was pushed to Supabase.');
+  $('#settingsBtn').click();
+};
+$('#sbConflictRemote').onclick = ()=>{
+  if(!sbPending || !sbPending.remote){ closeSbConflict(); $('#settingsBtn').click(); return; }
+  const {url, key, remote} = sbPending; closeSbConflict();
+  db.settings.supabaseUrl = url; db.settings.supabaseKey = key; db.settings.supabaseEnabled = true; save();
+  applyRemoteSnapshot(remote);
+  syncMeta.lastSyncedAt = new Date().toISOString(); syncMeta.lastError = null; saveSyncMeta();
+  toast('Loaded data from Supabase.');
+  $('#settingsBtn').click();
+};
+$('#sbDisconnectBtn').onclick = ()=>{
+  if(!confirm('Disconnect from Supabase? Data already in Supabase is left untouched — this only stops syncing from this browser.')) return;
+  db.settings.supabaseEnabled = false; save();
+  toast('Disconnected. Data stays in this browser only.');
+  updateSyncStatusUI();
+};
+$('#syncIndicator').onclick = ()=>$('#settingsBtn').click();
+
+/* ---- Pair-by-QR: the code is just a link back to this page with the Supabase
+   URL/key as query params (see reconcileOnLoad below for the scanning side).
+   The QR itself is generated fully offline — no third-party QR API ever sees
+   the key — and stays hidden until explicitly revealed. */
+function loadQrLib(){
+  if(window.qrcode) return Promise.resolve();
+  if(loadQrLib._p) return loadQrLib._p;
+  loadQrLib._p = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/qrcode-generator@1.4.4/qrcode.js';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('Could not load the QR code library — check your internet connection.'));
+    document.head.appendChild(s);
+  });
+  return loadQrLib._p;
+}
+function hideQr(){
+  $('#sbQrCanvas').innerHTML = ''; // actually discard the rendered code, not just hide it with CSS
+  $('#sbQrCanvasWrap').style.display = 'none';
+  $('#sbQrRevealWrap').style.display = '';
+}
+$('#sbQrRevealBtn').onclick = async ()=>{
+  if(!db.settings.supabaseEnabled){ toastErr('Connect to Supabase first, then generate a pairing code.'); return; }
+  const btn = $('#sbQrRevealBtn'); const prevLabel = btn.textContent; btn.textContent = 'Generating…'; btn.disabled = true;
+  try{
+    await loadQrLib();
+    const pairUrl = location.origin + location.pathname
+      + '?sb_url=' + encodeURIComponent(db.settings.supabaseUrl)
+      + '&sb_key=' + encodeURIComponent(db.settings.supabaseKey);
+    const qr = window.qrcode(0, 'M'); // typeNumber 0 = smallest size that fits the data
+    qr.addData(pairUrl);
+    qr.make();
+    $('#sbQrCanvas').innerHTML = qr.createSvgTag({cellSize: 5, margin: 4});
+    $('#sbQrCanvasWrap').style.display = '';
+    $('#sbQrRevealWrap').style.display = 'none';
+  }catch(err){
+    toastErr('Could not generate QR code: '+(err.message||err));
+  }finally{
+    btn.textContent = prevLabel; btn.disabled = false;
+  }
+};
+$('#sbQrHideBtn').onclick = hideQr;
+/* On load, reconcile once with Supabase (last-write-wins by timestamp) so opening
+   the app on a second device picks up whatever the other device last synced. */
+(async function reconcileOnLoad(){
+  // A QR-code pairing link looks like ?sb_url=...&sb_key=...; scrub it from the
+  // address bar immediately so the key doesn't linger in the visible URL/history.
+  const params = new URLSearchParams(location.search);
+  const qrUrl = params.get('sb_url'), qrKey = params.get('sb_key');
+  if(qrUrl && qrKey){
+    history.replaceState(null, '', location.pathname + location.hash);
+    updateSyncStatusUI();
+    try{
+      await attemptPairing(qrUrl, qrKey);
+    }catch(err){
+      toastErr('Could not pair via QR code: '+(err.message||err));
+    }
+    updateSyncStatusUI();
+    return;
+  }
+  updateSyncStatusUI();
+  if(!db.settings.supabaseEnabled) return;
+  try{
+    const remote = await fetchRemoteRow(db.settings.supabaseUrl, db.settings.supabaseKey);
+    if(remote && remote.updated_at && (!syncMeta.lastSyncedAt || new Date(remote.updated_at) > new Date(syncMeta.lastSyncedAt))){
+      applyRemoteSnapshot(remote.data);
+      syncMeta.lastSyncedAt = remote.updated_at; syncMeta.lastError = null; saveSyncMeta();
+    } else {
+      await pushToSupabase(true);
+    }
+  }catch(err){
+    syncMeta.lastError = err.message||String(err); saveSyncMeta();
+  }
+  updateSyncStatusUI();
+})();
 
 /* ============ privacy blur ============ */
 function applyBlur(on){ document.body.classList.toggle('blur-on', !!on); }
@@ -1796,10 +2162,10 @@ $('#importFile').onchange = e=>{
   f.text().then(t=>{
     try{ const d = JSON.parse(t);
       if(!d.vendors || !d.warehouses) throw new Error('not a backup file');
-      if(d.settings) delete d.settings.apiKey; // never accept a key from a shared file
+      if(d.settings){ delete d.settings.apiKey; delete d.settings.supabaseUrl; delete d.settings.supabaseKey; delete d.settings.supabaseEnabled; } // never accept credentials from a shared file
       delete d.orders; // vendor imports never touch personal order data
-      const key = db.settings.apiKey;
-      db = d; db.settings = db.settings||{}; db.settings.apiKey = key; db.cart = db.cart||[];
+      const keep = {apiKey: db.settings.apiKey, supabaseUrl: db.settings.supabaseUrl, supabaseKey: db.settings.supabaseKey, supabaseEnabled: db.settings.supabaseEnabled};
+      db = d; db.settings = Object.assign({}, SETTINGS_DEFAULTS, db.settings, keep); db.cart = db.cart||[];
       save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
     }catch(err){ toastErr('Import failed: '+err.message); }
   });
