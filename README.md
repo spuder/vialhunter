@@ -34,6 +34,36 @@ Vendor-agnostic peptide price comparison. Pure static JAMstack app — one `inde
 
 Header row with `Code, Name, Specification, Price` columns (order/extra columns fine). Optional meta rows above it: `Shipping Cost`, `Minimum Order`, `Upload Date`. See `sample-pricelist.csv`. Files without headers are parsed by column position. Everything lands in an editable review table before saving.
 
+## Supabase sync (optional)
+
+Pair your own free Supabase project in ⚙ Settings to sync vendors, cart, and orders across devices. Off by default — the app stays no-build/no-server/no-auth until you actually connect one.
+
+**Header indicator — local vs. synced storage**
+
+![VialHunter header showing the 💻 local-storage indicator next to the logo](assets/vialhunter-supabase-header-local.png)
+![VialHunter header showing the ☁ synced indicator once a Supabase project is connected](assets/vialhunter-supabase-header-synced.png)
+
+**Settings — Supabase URL / anon key**
+
+![Settings modal with the new Supabase sync section: project URL, anon key, and a Connect button](assets/vialhunter-supabase-settings.png)
+
+**In-app setup instructions**
+
+Expand "Where do I get a Supabase URL and key?" for the exact SQL to create the table and RLS policy, plus where to find your Project URL and anon key.
+
+![Expanded readme inside Settings showing the SQL to create the vialhunter_sync table and RLS policy](assets/vialhunter-supabase-readme.png)
+
+**Pairing prompts**
+
+Connecting to an empty project offers a one-way migration up; connecting to a project that already has data (e.g. pairing a phone) asks which side should win.
+
+![Prompt offering to migrate local data up to an empty Supabase project](assets/vialhunter-supabase-migrate-prompt.png)
+![Prompt asking whether to keep the remote data or overwrite it with this device's local data](assets/vialhunter-supabase-overwrite-prompt.png)
+
+**Connected state**
+
+![Settings showing a connected/synced state with a Re-sync now button and Disconnect option](assets/vialhunter-supabase-connected.png)
+
 ## Notes
 
 - API key is never included in Export backups.
