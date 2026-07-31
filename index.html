@@ -1932,7 +1932,13 @@ function updateSyncStatusUI(){
   if(qrDetails) qrDetails.style.display = enabled ? '' : 'none';
 }
 let sbPending = null; // {url, key, remote} awaiting a conflict-modal decision
-function openSbConflict(title, body){ $('#sbConflictTitle').textContent = title; $('#sbConflictBody').textContent = body; $('#sbConflictOverlay').classList.add('open'); }
+function openSbConflict(title, body, showRemoteBtn){
+  $('#setOverlay').classList.remove('open'); // one modal on screen at a time — two stacked overlays reads as "nothing happened"
+  $('#sbConflictTitle').textContent = title; $('#sbConflictBody').textContent = body;
+  $('#sbConflictRemote').style.display = showRemoteBtn ? '' : 'none';
+  $('#sbConflictLocal').textContent = showRemoteBtn ? "Use this device's data" : 'Yes, migrate';
+  $('#sbConflictOverlay').classList.add('open');
+}
 function closeSbConflict(){ $('#sbConflictOverlay').classList.remove('open'); sbPending = null; }
 /* Shared by the manual Connect button and the QR-code deep-link handler below:
    decide whether this is a fresh pairing, a migration, or a conflict needing
@@ -1945,11 +1951,12 @@ async function attemptPairing(url, key){
   if(remoteHasData){
     // Remote already has data (e.g. pairing a second device) — ask which side wins.
     sbPending = {url, key, remote: remote.data};
-    openSbConflict('Existing data found in Supabase', 'This Supabase project already has data. Do you want to use the remote data (overwriting what\'s in this browser), or use this device\'s local data (overwriting what\'s in Supabase)?');
+    openSbConflict('Existing data found in Supabase', 'This Supabase project already has data. Do you want to use the remote data (overwriting what\'s in this browser), or use this device\'s local data (overwriting what\'s in Supabase)?', true);
   } else if(localHasData){
-    // Remote is empty but this device has local data — offer to migrate it up.
+    // Remote is empty but this device has local data — offer to migrate it up. There's
+    // no remote data to fall back to here, so the "use remote" option is hidden.
     sbPending = {url, key, remote: null, migrateOnly: true};
-    openSbConflict('Migrate local data to Supabase?', 'This Supabase project is empty. Upload this browser\'s vendors/cart/orders to it so other devices can sync with them?');
+    openSbConflict('Migrate local data to Supabase?', 'This Supabase project is empty. Upload this browser\'s vendors/cart/orders to it so other devices can sync with them?', false);
   } else {
     db.settings.supabaseEnabled = true; save();
     await pushToSupabase();
@@ -1968,23 +1975,26 @@ $('#sbConnectBtn').onclick = async ()=>{
     btn.textContent = prevLabel; btn.disabled = false; updateSyncStatusUI();
   }
 };
-$('#sbConflictCancel').onclick = closeSbConflict;
+// Cancelling or resolving the conflict returns to Settings (rather than leaving the
+// user staring at a bare dimmed backdrop) so the updated status is visible right away.
+$('#sbConflictCancel').onclick = ()=>{ closeSbConflict(); $('#settingsBtn').click(); };
+$('#sbConflictOverlay').addEventListener('click', e=>{ if(e.target===e.currentTarget) $('#sbConflictCancel').click(); });
 $('#sbConflictLocal').onclick = async ()=>{
   if(!sbPending) return closeSbConflict();
   const {url, key} = sbPending; closeSbConflict();
   db.settings.supabaseUrl = url; db.settings.supabaseKey = key; db.settings.supabaseEnabled = true; save();
   await pushToSupabase();
   toast('This device\'s data was pushed to Supabase.');
-  updateSyncStatusUI();
+  $('#settingsBtn').click();
 };
 $('#sbConflictRemote').onclick = ()=>{
-  if(!sbPending || !sbPending.remote) return closeSbConflict();
+  if(!sbPending || !sbPending.remote){ closeSbConflict(); $('#settingsBtn').click(); return; }
   const {url, key, remote} = sbPending; closeSbConflict();
   db.settings.supabaseUrl = url; db.settings.supabaseKey = key; db.settings.supabaseEnabled = true; save();
   applyRemoteSnapshot(remote);
   syncMeta.lastSyncedAt = new Date().toISOString(); syncMeta.lastError = null; saveSyncMeta();
   toast('Loaded data from Supabase.');
-  updateSyncStatusUI();
+  $('#settingsBtn').click();
 };
 $('#sbDisconnectBtn').onclick = ()=>{
   if(!confirm('Disconnect from Supabase? Data already in Supabase is left untouched — this only stops syncing from this browser.')) return;
