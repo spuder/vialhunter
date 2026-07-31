@@ -240,6 +240,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <button id="syncIndicator" class="navtab" title="Local storage only — click to set up Supabase sync"><span id="syncIcon">💻</span><span id="syncDot"></span></button>
   <nav class="viewnav">
     <button id="navVendors" class="navtab active">🏪 Vendors</button>
+    <button id="navCatalog" class="navtab">🔍 Catalog</button>
     <button id="navOrders" class="navtab">📦 Orders</button>
   </nav>
   <div style="flex:1"></div>
@@ -258,7 +259,9 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
     <h2>Vendors</h2>
     <div class="hint" style="margin-bottom:10px">Drop a price list — CSV, Excel, PDF, or a photo/screenshot — onto any warehouse row, or onto a vendor's “new warehouse” box below it. CSV/Excel parse locally; PDFs &amp; images are extracted with Claude AI (add your API key in ⚙ Settings).</div>
     <div id="vendorGrid"></div>
+  </div>
 
+  <div id="viewCatalog" style="display:none">
     <div class="searchrow">
       <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
     </div>
@@ -2184,24 +2187,27 @@ function applyTheme(t){
 $('#themeBtn').onclick = ()=> applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');
 applyTheme((function(){ try{ const s=localStorage.getItem('vialhunter_theme'); if(s==='light'||s==='dark') return s; }catch(e){} return 'dark'; })());
 
-/* ============ view switching (Vendors / Orders) ============
-   One page, two views toggled by JS — keeps the app a single static file
-   (no build step, no second page to keep in sync) while still giving Orders
-   its own nav tab and a bookmarkable #orders URL. */
+/* ============ view switching (Vendors / Catalog / Orders) ============
+   One page, three views toggled by JS — keeps the app a single static file
+   (no build step, no second page to keep in sync) while still giving each
+   tab its own nav button and a bookmarkable #hash URL. */
 function setView(v){
-  const isOrders = v==='orders';
-  $('#viewVendors').style.display = isOrders ? 'none' : '';
-  $('#viewOrders').style.display = isOrders ? '' : 'none';
-  $('#vendorHeaderActions').style.display = isOrders ? 'none' : '';
-  $('#navVendors').classList.toggle('active', !isOrders);
-  $('#navOrders').classList.toggle('active', isOrders);
-  const hash = isOrders ? '#orders' : '';
+  if(v!=='catalog' && v!=='orders') v = 'vendors';
+  $('#viewVendors').style.display = v==='vendors' ? '' : 'none';
+  $('#viewCatalog').style.display = v==='catalog' ? '' : 'none';
+  $('#viewOrders').style.display = v==='orders' ? '' : 'none';
+  $('#vendorHeaderActions').style.display = v==='orders' ? 'none' : '';
+  $('#navVendors').classList.toggle('active', v==='vendors');
+  $('#navCatalog').classList.toggle('active', v==='catalog');
+  $('#navOrders').classList.toggle('active', v==='orders');
+  const hash = v==='vendors' ? '' : '#'+v;
   if(location.hash !== hash) history.replaceState(null, '', location.pathname+location.search+hash);
 }
 $('#navVendors').onclick = ()=>setView('vendors');
+$('#navCatalog').onclick = ()=>setView('catalog');
 $('#navOrders').onclick = ()=>setView('orders');
-window.addEventListener('hashchange', ()=>setView(location.hash==='#orders'?'orders':'vendors'));
-setView(location.hash==='#orders' ? 'orders' : 'vendors');
+window.addEventListener('hashchange', ()=>setView(location.hash.replace('#','')));
+setView(location.hash.replace('#',''));
 
 /* ============ init ============ */
 function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderResults(); renderCartCount(); }
