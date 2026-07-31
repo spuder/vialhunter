@@ -444,6 +444,10 @@ create policy "anon full access" on vialhunter_sync
     <button id="sbConnectBtn">🔗 Connect / Sync now</button>
     <button id="sbDisconnectBtn" class="danger" style="display:none">Disconnect</button>
   </div>
+  <div class="mfoot" style="justify-content:flex-start;margin-top:6px">
+    <button id="sbClearLocalBtn" class="danger">🗑 Clear local data on this device</button>
+  </div>
+  <p class="hint" style="margin-top:4px">Wipes vendors/cart/orders stored in <i>this browser only</i> (useful if this device's storage is full, e.g. the "Storage is full" warning on mobile). If sync is on, the latest data re-downloads from Supabase right after — nothing is deleted from Supabase. If sync is off, this deletes the data permanently unless you've exported a backup.</p>
 
   <details id="sbDiagDetails" style="margin:10px 0 0">
     <summary style="cursor:pointer;color:var(--text)">🩺 Connection diagnostics</summary>
@@ -2051,6 +2055,23 @@ $('#sbDisconnectBtn').onclick = ()=>{
   updateSyncStatusUI();
 };
 $('#syncIndicator').onclick = ()=>$('#settingsBtn').click();
+/* Frees up this device's localStorage (the usual reason: mobile browsers cap it
+   far lower than desktop, and synced order photos/COAs/lab reports can exceed it). */
+$('#sbClearLocalBtn').onclick = ()=>{
+  const enabled = db.settings.supabaseEnabled;
+  const msg = enabled
+    ? 'Clear vendors/cart/orders stored in THIS browser? Since sync is on, the latest data re-downloads from Supabase right after — nothing is deleted from Supabase.'
+    : 'Clear vendors/cart/orders stored in THIS browser? Sync is off, so this deletes the data permanently unless you\'ve exported a backup first.';
+  if(!confirm(msg)) return;
+  db.vendors = []; db.warehouses = []; db.cart = [];
+  ordersDb.orders = [];
+  // Forget the last-synced timestamp so the reload below pulls fresh from Supabase
+  // instead of seeing this now-empty local state as "unsynced" and pushing it up,
+  // which would wipe the remote copy.
+  syncMeta.lastSyncedAt = null; saveSyncMeta();
+  save(); saveOrders();
+  location.reload();
+};
 
 /* ---- Pair-by-QR: the code is just a link back to this page with the Supabase
    URL/key as query params (see reconcileOnLoad below for the scanning side).
