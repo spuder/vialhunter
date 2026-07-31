@@ -57,6 +57,8 @@ button.navtab.active{background:var(--panel2);border-color:var(--border);color:v
 .vtoggle.all.active{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
 #cartBtn{position:relative;font-weight:600}
 #cartCount{position:absolute;top:-8px;right:-8px;background:var(--accent);color:var(--onaccent);font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
+#syncIndicator{position:relative}
+#syncDot{position:absolute;top:2px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--danger)}
 main{max-width:1280px;margin:0 auto;padding:22px 20px 80px}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 12px}
 .hint{color:var(--muted);font-size:13px}
@@ -235,7 +237,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
 <body>
 <header>
   <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="7.5" y="1.5" width="9" height="3.5" rx="1.2" fill="var(--muted)"/><path d="M9.5 5.5v9.7a2.5 2.5 0 0 0 5 0V5.5" fill="none" stroke="var(--text)" stroke-width="1.6" stroke-linecap="round"/><path d="M9.5 11h5v4.2a2.5 2.5 0 0 1-5 0z" fill="var(--accent)"/></svg>Vial<span>Hunter</span></div>
-  <button id="syncIndicator" class="navtab" title="Local storage only — click to set up Supabase sync">💻</button>
+  <button id="syncIndicator" class="navtab" title="Local storage only — click to set up Supabase sync"><span id="syncIcon">💻</span><span id="syncDot"></span></button>
   <nav class="viewnav">
     <button id="navVendors" class="navtab active">🏪 Vendors</button>
     <button id="navOrders" class="navtab">📦 Orders</button>
@@ -1911,12 +1913,14 @@ function fmtSyncTime(iso){
   return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 function updateSyncStatusUI(){
-  const ind = $('#syncIndicator');
+  const ind = $('#syncIndicator'), icon = $('#syncIcon'), dot = $('#syncDot');
   const enabled = !!db.settings.supabaseEnabled;
   if(ind){
-    if(!enabled){ ind.textContent='💻'; ind.title='Local storage only — click to set up Supabase sync'; }
-    else if(syncMeta.lastError){ ind.textContent='☁⚠'; ind.title='Supabase sync error: '+syncMeta.lastError+' — click to check settings'; }
-    else{ ind.textContent='☁'; ind.title='Synced with Supabase — last synced '+fmtSyncTime(syncMeta.lastSyncedAt); }
+    // Emoji glyphs are full-color font characters and ignore CSS `color`, so the
+    // connected/not-connected state is shown with a small dot badge instead.
+    if(!enabled){ icon.textContent='💻'; ind.title='Local storage only — click to set up Supabase sync'; dot.style.background='var(--danger)'; }
+    else if(syncMeta.lastError){ icon.textContent='☁'; ind.title='Supabase sync error: '+syncMeta.lastError+' — click to check settings'; dot.style.background='var(--danger)'; }
+    else{ icon.textContent='☁'; ind.title='Synced with Supabase — last synced '+fmtSyncTime(syncMeta.lastSyncedAt); dot.style.background='var(--best)'; }
   }
   const statusText = $('#sbStatusText'), connectBtn = $('#sbConnectBtn'), disconnectBtn = $('#sbDisconnectBtn'), qrDetails = $('#sbQrDetails');
   if(!statusText) return;
