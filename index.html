@@ -58,7 +58,7 @@ button.navtab.active{background:var(--panel2);border-color:var(--border);color:v
 #cartBtn{position:relative;font-weight:600}
 #cartCount{position:absolute;top:-8px;right:-8px;background:var(--accent);color:var(--onaccent);font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
 #syncIndicator{position:relative}
-#syncDot{position:absolute;top:2px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--danger)}
+#syncDot{position:absolute;top:2px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--best);display:none}
 main{max-width:1280px;margin:0 auto;padding:22px 20px 80px}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 12px}
 .hint{color:var(--muted);font-size:13px}
@@ -1952,11 +1952,11 @@ function updateSyncStatusUI(){
   const ind = $('#syncIndicator'), icon = $('#syncIcon'), dot = $('#syncDot');
   const enabled = !!db.settings.supabaseEnabled;
   if(ind){
-    // Emoji glyphs are full-color font characters and ignore CSS `color`, so the
-    // connected/not-connected state is shown with a small dot badge instead.
-    if(!enabled){ icon.textContent='💻'; ind.title='Local storage only — click to set up Supabase sync'; dot.style.background='var(--danger)'; }
-    else if(syncMeta.lastError){ icon.textContent='☁'; ind.title='Supabase sync error: '+syncMeta.lastError+' — click to check settings'; dot.style.background='var(--danger)'; }
-    else{ icon.textContent='☁'; ind.title='Synced with Supabase — last synced '+fmtSyncTime(syncMeta.lastSyncedAt); dot.style.background='var(--best)'; }
+    // Emoji glyphs are full-color font characters and ignore CSS `color`, so a
+    // green dot badge marks the connected-and-synced state; otherwise no dot at all.
+    if(!enabled){ icon.textContent='💻'; ind.title='Local storage only — click to set up Supabase sync'; dot.style.display='none'; }
+    else if(syncMeta.lastError){ icon.textContent='☁'; ind.title='Supabase sync error: '+syncMeta.lastError+' — click to check settings'; dot.style.display='none'; }
+    else{ icon.textContent='☁'; ind.title='Synced with Supabase — last synced '+fmtSyncTime(syncMeta.lastSyncedAt); dot.style.display='block'; }
   }
   const statusText = $('#sbStatusText'), connectBtn = $('#sbConnectBtn'), disconnectBtn = $('#sbDisconnectBtn'), qrDetails = $('#sbQrDetails');
   if(!statusText) return;
