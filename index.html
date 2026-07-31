@@ -445,6 +445,11 @@ create policy "anon full access" on vialhunter_sync
     <button id="sbDisconnectBtn" class="danger" style="display:none">Disconnect</button>
   </div>
 
+  <details id="sbDiagDetails" style="margin:10px 0 0">
+    <summary style="cursor:pointer;color:var(--text)">🩺 Connection diagnostics</summary>
+    <pre id="sbDiagLog" class="hint" style="margin-top:8px;max-height:180px;overflow-y:auto;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;white-space:pre-wrap;font-size:12px">Click Connect / Sync now to see a step-by-step log here.</pre>
+  </details>
+
   <details id="sbQrDetails" style="margin:14px 0 0;display:none">
     <summary style="cursor:pointer;color:var(--text)">📱 Pair another device via QR code</summary>
     <div style="margin-top:8px">
@@ -1849,14 +1854,39 @@ $('#setCancel').onclick = ()=>$('#setOverlay').classList.remove('open');
 $('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; db.settings.blurSensitive=$('#setBlur').checked; save(); applyBlur(db.settings.blurSensitive); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
 
 /* ---- Supabase sync: connect / pair / disconnect ---- */
+/* Diagnostics log shown right in the Settings dialog (not a toast, which can be
+   missed or get overwritten by a later toast call) so a failed connection is
+   always traceable to a concrete step and error, not just "nothing happened". */
+function clearDiag(){ $('#sbDiagLog').textContent = ''; }
+function logDiag(msg){
+  const el = $('#sbDiagLog');
+  const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  el.textContent += (el.textContent ? '\n' : '') + '['+time+'] '+msg;
+  el.scrollTop = el.scrollHeight;
+  $('#sbDiagDetails').open = true;
+}
+function describeError(err){
+  if(!err) return 'Unknown error';
+  if(typeof err === 'string') return err;
+  const parts = [err.message || String(err)];
+  if(err.details) parts.push('details: '+err.details);
+  if(err.hint) parts.push('hint: '+err.hint);
+  if(err.code) parts.push('code: '+err.code);
+  if(err.status) parts.push('status: '+err.status);
+  return parts.join(' | ');
+}
 function loadSupabaseLib(){
   if(window.supabase && window.supabase.createClient) return Promise.resolve();
   if(loadSupabaseLib._p) return loadSupabaseLib._p;
+  logDiag('Loading Supabase client library from unpkg…');
   loadSupabaseLib._p = new Promise((resolve, reject)=>{
     const s = document.createElement('script');
     s.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js';
-    s.onload = ()=>resolve();
-    s.onerror = ()=>reject(new Error('Could not load the Supabase library — check your internet connection.'));
+    s.onload = ()=>{ logDiag('✓ Supabase library loaded.'); resolve(); };
+    s.onerror = ()=>{
+      const e = new Error('Could not load the Supabase library — check your internet connection or ad-blocker.');
+      logDiag('✗ '+e.message); reject(e);
+    };
     document.head.appendChild(s);
   });
   return loadSupabaseLib._p;
@@ -1880,8 +1910,10 @@ function buildSyncPayload(){
 function payloadHasData(p){ return !!p && ((p.vendors&&p.vendors.length) || (p.orders&&p.orders.length)); }
 async function fetchRemoteRow(url, key){
   const client = await getSbClient(url, key);
+  logDiag('Querying vialhunter_sync table at '+url+' …');
   const {data, error} = await client.from('vialhunter_sync').select('data,updated_at').eq('id','default').maybeSingle();
-  if(error) throw error;
+  if(error){ logDiag('✗ Query failed: '+describeError(error)); throw error; }
+  logDiag('✓ Query OK — '+(data ? 'existing row found.' : 'no row yet (empty project).'));
   return data; // null if no row yet
 }
 async function pushToSupabase(silent){
@@ -1889,12 +1921,16 @@ async function pushToSupabase(silent){
   try{
     const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
     const nowIso = new Date().toISOString();
+    logDiag('Pushing current data to Supabase…');
     const {error} = await client.from('vialhunter_sync').upsert({id:'default', data: buildSyncPayload(), updated_at: nowIso});
     if(error) throw error;
+    logDiag('✓ Push succeeded.');
     syncMeta.lastSyncedAt = nowIso; syncMeta.lastError = null; saveSyncMeta(); updateSyncStatusUI();
   }catch(err){
-    syncMeta.lastError = err.message || String(err); saveSyncMeta(); updateSyncStatusUI();
-    if(!silent) toastErr('Supabase sync failed: '+syncMeta.lastError);
+    const desc = describeError(err);
+    logDiag('✗ Push failed: '+desc);
+    syncMeta.lastError = desc; saveSyncMeta(); updateSyncStatusUI();
+    if(!silent) toastErr('Supabase sync failed: '+desc);
   }
 }
 function applyRemoteSnapshot(remote){
@@ -1948,23 +1984,29 @@ function closeSbConflict(){ $('#sbConflictOverlay').classList.remove('open'); sb
    decide whether this is a fresh pairing, a migration, or a conflict needing
    the user's input. */
 async function attemptPairing(url, key){
+  clearDiag();
+  logDiag('Connecting to '+url+' …');
   db.settings.supabaseUrl = url; db.settings.supabaseKey = key; save();
   const remote = await fetchRemoteRow(url, key);
   const remoteHasData = payloadHasData(remote && remote.data);
   const localHasData = payloadHasData(buildSyncPayload());
   if(remoteHasData){
     // Remote already has data (e.g. pairing a second device) — ask which side wins.
+    logDiag('Remote already has data — asking whether to keep local or remote.');
     sbPending = {url, key, remote: remote.data};
     openSbConflict('Existing data found in Supabase', 'This Supabase project already has data. Do you want to use the remote data (overwriting what\'s in this browser), or use this device\'s local data (overwriting what\'s in Supabase)?', true);
   } else if(localHasData){
     // Remote is empty but this device has local data — offer to migrate it up. There's
     // no remote data to fall back to here, so the "use remote" option is hidden.
+    logDiag('Local data present, remote is empty — offering to migrate up.');
     sbPending = {url, key, remote: null, migrateOnly: true};
     openSbConflict('Migrate local data to Supabase?', 'This Supabase project is empty. Upload this browser\'s vendors/cart/orders to it so other devices can sync with them?', false);
   } else {
+    logDiag('Nothing to migrate either way — connecting.');
     db.settings.supabaseEnabled = true; save();
     await pushToSupabase();
-    toast('Connected to Supabase.');
+    if(syncMeta.lastError) logDiag('✗ Connected, but the initial push failed — see above.');
+    else{ logDiag('✓ Connected.'); toast('Connected to Supabase.'); }
   }
 }
 $('#sbConnectBtn').onclick = async ()=>{
@@ -1974,7 +2016,9 @@ $('#sbConnectBtn').onclick = async ()=>{
   try{
     await attemptPairing(url, key);
   }catch(err){
-    toastErr('Could not reach Supabase: '+(err.message||err)+' — check the URL/key and that the setup SQL ran (see the instructions above).');
+    const desc = describeError(err);
+    logDiag('✗ Connect failed: '+desc);
+    toastErr('Could not reach Supabase: '+desc+' — check the diagnostics log below, and that the URL/key/setup SQL are correct.');
   }finally{
     btn.textContent = prevLabel; btn.disabled = false; updateSyncStatusUI();
   }
@@ -1988,7 +2032,7 @@ $('#sbConflictLocal').onclick = async ()=>{
   const {url, key} = sbPending; closeSbConflict();
   db.settings.supabaseUrl = url; db.settings.supabaseKey = key; db.settings.supabaseEnabled = true; save();
   await pushToSupabase();
-  toast('This device\'s data was pushed to Supabase.');
+  if(!syncMeta.lastError) toast('This device\'s data was pushed to Supabase.');
   $('#settingsBtn').click();
 };
 $('#sbConflictRemote').onclick = ()=>{
