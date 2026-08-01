@@ -2000,10 +2000,29 @@ async function fetchRemoteRow(url, key){
   logDiag('✓ Query OK — '+(data ? 'existing row found.' : 'no row yet (empty project).'));
   return data; // null if no row yet
 }
-async function pushToSupabase(silent){
+/* `force` bypasses the empty-data guard below — only pass it from a flow where
+   the user has just explicitly confirmed overwriting Supabase (e.g. "Use this
+   device's data"), or where the caller already just proved the push is safe. */
+async function pushToSupabase(silent, force){
   if(!db.settings.supabaseEnabled) return;
   try{
     const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
+    if(!force){
+      // A background push (every edit debounces one) must never silently overwrite
+      // real Supabase data with a device that looks empty — e.g. the very first
+      // load, before the initial pull below has finished, but the user already
+      // touched something else and triggered a save(). Refuse and ask instead.
+      const {data: existing} = await client.from('vialhunter_sync').select('data').eq('id','default').maybeSingle();
+      const remoteData = (existing && existing.data) || {};
+      const localOrders = ordersDb.orders.length, localVendors = db.vendors.length;
+      const remoteOrders = (remoteData.orders||[]).length, remoteVendors = (remoteData.vendors||[]).length;
+      if(looksLikeDataLoss(remoteOrders, localOrders) || looksLikeDataLoss(remoteVendors, localVendors)){
+        logDiag('⚠ Skipped push: this device has '+localOrders+' order(s)/'+localVendors+' vendor(s) but Supabase already has '+remoteOrders+'/'+remoteVendors+' — refusing to overwrite with what looks like an empty/incomplete local copy. Open Settings to resolve manually if this device being empty is intentional.');
+        syncMeta.lastError = 'Push skipped — this device looks empty compared to Supabase. Open Settings to resolve.';
+        saveSyncMeta(); updateSyncStatusUI();
+        return;
+      }
+    }
     const nowIso = new Date().toISOString();
     logDiag('Pushing current data to Supabase…');
     const {error} = await client.from('vialhunter_sync').upsert({id:'default', data: buildSyncPayload(), updated_at: nowIso});
@@ -2026,6 +2045,38 @@ function applyRemoteSnapshot(remote){
   save(); saveOrders();
   suppressSync = false;
   renderAll(); applyBlur(db.settings.blurSensitive);
+}
+/* Silent last-write-wins sync is dangerous the moment one side is legitimately
+   empty (a fresh tab/device, a first-ever connect, a stale copy) — applying it
+   automatically can wipe real orders/vendors with no warning at all. Whenever
+   one side has data and the other is completely empty, pause and ask instead
+   of guessing, reusing the same conflict modal shown on first pairing. A
+   partial change (e.g. one order added or removed) is not "empty" and still
+   syncs silently, same as before — this only catches the all-or-nothing case. */
+function looksLikeDataLoss(fromCount, toCount){ return fromCount > 0 && toCount === 0; }
+async function reconcileWithRemote(){
+  const remote = await fetchRemoteRow(db.settings.supabaseUrl, db.settings.supabaseKey);
+  const remoteData = (remote && remote.data) || {};
+  const remoteNewer = !!(remote && remote.updated_at && (!syncMeta.lastSyncedAt || new Date(remote.updated_at) > new Date(syncMeta.lastSyncedAt)));
+  const localOrders = ordersDb.orders.length, localVendors = db.vendors.length;
+  const remoteOrders = (remoteData.orders||[]).length, remoteVendors = (remoteData.vendors||[]).length;
+  const pullWouldWipeLocal = remoteNewer && (looksLikeDataLoss(localOrders, remoteOrders) || looksLikeDataLoss(localVendors, remoteVendors));
+  const pushWouldWipeRemote = !remoteNewer && remote && (looksLikeDataLoss(remoteOrders, localOrders) || looksLikeDataLoss(remoteVendors, localVendors));
+  if(pullWouldWipeLocal || pushWouldWipeRemote){
+    logDiag('⚠ Paused auto-sync: this device has '+localOrders+' order(s)/'+localVendors+' vendor(s), Supabase has '+remoteOrders+' order(s)/'+remoteVendors+' vendor(s) — one side is empty, so this needs a manual choice to avoid wiping real data.');
+    syncMeta.lastError = 'Sync paused — one side has no data. Resolve in Settings to avoid losing anything.';
+    saveSyncMeta();
+    sbPending = {url: db.settings.supabaseUrl, key: db.settings.supabaseKey, remote: remoteData};
+    openSbConflict('Sync mismatch — which data should win?',
+      'This device has '+localOrders+' order(s) / '+localVendors+' vendor(s). Supabase has '+remoteOrders+' order(s) / '+remoteVendors+' vendor(s). One side is empty, so auto-sync paused rather than risk erasing the other — pick which one is correct.', true);
+    return;
+  }
+  if(remoteNewer){
+    applyRemoteSnapshot(remoteData);
+    syncMeta.lastSyncedAt = remote.updated_at; syncMeta.lastError = null; saveSyncMeta();
+  } else {
+    await pushToSupabase(true, true); // already just proved above this push isn't destructive
+  }
 }
 function fmtSyncTime(iso){
   if(!iso) return 'never';
@@ -2121,7 +2172,7 @@ $('#sbConflictLocal').onclick = async ()=>{
   // Upload any existing inline photos/COAs/lab reports to Storage before the
   // first push, so the migrated data doesn't start out full of heavy base64 blobs.
   await optimizeLocalPhotosToStorage();
-  await pushToSupabase();
+  await pushToSupabase(false, true); // explicit, user-confirmed "use this device's data" — bypass the empty-data guard
   if(!syncMeta.lastError) toast('This device\'s data was pushed to Supabase.');
   $('#settingsBtn').click();
 };
@@ -2227,13 +2278,7 @@ $('#sbQrHideBtn').onclick = hideQr;
   updateSyncStatusUI();
   if(!db.settings.supabaseEnabled) return;
   try{
-    const remote = await fetchRemoteRow(db.settings.supabaseUrl, db.settings.supabaseKey);
-    if(remote && remote.updated_at && (!syncMeta.lastSyncedAt || new Date(remote.updated_at) > new Date(syncMeta.lastSyncedAt))){
-      applyRemoteSnapshot(remote.data);
-      syncMeta.lastSyncedAt = remote.updated_at; syncMeta.lastError = null; saveSyncMeta();
-    } else {
-      await pushToSupabase(true);
-    }
+    await reconcileWithRemote();
   }catch(err){
     syncMeta.lastError = err.message||String(err); saveSyncMeta();
   }
