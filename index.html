@@ -266,6 +266,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
       <div id="searchBar"><input id="searchInput" type="text" placeholder="Search a peptide… e.g. retatrutide, kisspeptin, BPC"></div>
     </div>
     <div id="vendorToggles" class="vendortoggles"></div>
+    <div id="countryToggles" class="vendortoggles"></div>
     <h2 id="resultsTitle">All products</h2>
     <div id="results"></div>
   </div>
@@ -318,9 +319,14 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <h3 id="whTitle">Warehouse</h3>
   <div class="frow">
     <div><label>Name</label><input id="whName" placeholder="Warehouse 1"></div>
-    <div><label>Shipping cost ($)</label><input id="whShip" type="number" step="0.01" placeholder="60"></div>
+    <div><label>Country</label><select id="whCountry">
+      <option value="">—</option>
+      <option value="US">🇺🇸 USA</option>
+      <option value="CN">🇨🇳 China</option>
+    </select></div>
   </div>
   <div class="frow">
+    <div><label>Shipping cost ($)</label><input id="whShip" type="number" step="0.01" placeholder="60"></div>
     <div><label>Free shipping over ($, optional)</label><input id="whFree" type="number" step="0.01"></div>
     <div><label>Minimum order ($, optional)</label><input id="whMin" type="number" step="0.01"></div>
   </div>
@@ -385,6 +391,11 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <h3>Review extracted items <span class="hint" id="reviewMeta"></span></h3>
   <div class="frow">
     <div><label>Vendor · Warehouse</label><input id="rvWhName" placeholder="Warehouse 1"></div>
+    <div><label>Country</label><select id="rvCountry">
+      <option value="">—</option>
+      <option value="US">🇺🇸 USA</option>
+      <option value="CN">🇨🇳 China</option>
+    </select></div>
     <div><label>Shipping cost ($)</label><input id="rvShip" type="number" step="0.01"></div>
     <div><label>Free ship over ($)</label><input id="rvFree" type="number" step="0.01"></div>
     <div><label>Minimum order ($)</label><input id="rvMin" type="number" step="0.01"></div>
@@ -592,6 +603,8 @@ function $(s){ return document.querySelector(s); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function money(n){ return '$' + (+n).toFixed(2).replace(/\.00$/,''); }
 function digits(p){ return String(p||'').replace(/[^0-9]/g,''); }
+function countryFlag(c){ return c==='US'?'🇺🇸':c==='CN'?'🇨🇳':''; }
+function countryName(c){ return c==='US'?'USA':c==='CN'?'China':'Unspecified'; }
 function waLink(p, text){ const d = digits(p); if(!d) return null; return 'https://wa.me/'+d+(text?'?text='+encodeURIComponent(text):''); }
 function toast(m, sticky, isErr){
   const t=$('#toast');
@@ -660,7 +673,7 @@ function renderVendors(){
         </div>
       </div>
       <div>${(v.contacts||[]).map((c,ci)=>`<div class="contactrow"><span class="who"><span class="cphoto" data-cph="${v.id}:${ci}" title="Click to set this person's photo">${c.photo?`<img src="${c.photo}">`:'👤'}</span><span class="pii">${esc(c.name)}</span></span>${c.phone?`<a class="wa" target="_blank" href="${waLink(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('')}</div>
-      <div>${whs.map(w=>`<div class="whrow" data-whdrop="${w.id}" title="Drop a price list (CSV/XLSX/PDF/image) here to update ${esc(w.name)}"><span>🏭 ${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
+      <div>${whs.map(w=>`<div class="whrow" data-whdrop="${w.id}" title="Drop a price list (CSV/XLSX/PDF/image) here to update ${esc(w.name)}"><span>${countryFlag(w.country)?countryFlag(w.country)+' ':''}${esc(w.name)} <span class="meta">· ${w.items.length} items${w.uploadDate?' · '+esc(w.uploadDate):''}</span></span>
         <span><button class="small" data-upwh="${w.id}" title="Upload a price list to this warehouse">⇩ Upload</button> <button class="small" data-editwh="${w.id}">Edit</button> <button class="small danger" data-delwh="${w.id}">✕</button></span></div>`).join('')}
       <div class="newwh" data-newwh="${v.id}" title="Creates a new warehouse for ${esc(v.name)} from the dropped file">⇩ New warehouse — drop a price list or click</div></div>
       <div class="vfoot">
@@ -800,6 +813,7 @@ function openWhModal(whId, vendorId){
   const w = whId ? db.warehouses.find(x=>x.id===whId) : null;
   $('#whTitle').textContent = w ? 'Edit warehouse — '+w.name : 'New warehouse';
   $('#whName').value = w?w.name:''; $('#whShip').value = w&&w.shippingCost!=null?w.shippingCost:'';
+  $('#whCountry').value = w&&w.country?w.country:'';
   $('#whFree').value = w&&w.freeShipOver!=null?w.freeShipOver:'';
   $('#whMin').value = w&&w.minOrder!=null?w.minOrder:'';
   $('#whOverlay').classList.add('open');
@@ -807,12 +821,13 @@ function openWhModal(whId, vendorId){
 $('#whCancel').onclick = ()=>$('#whOverlay').classList.remove('open');
 $('#whSave').onclick = ()=>{
   const name = $('#whName').value.trim() || 'Warehouse';
+  const country = $('#whCountry').value || null;
   const num = v => v===''?null:parseFloat(v);
   if(editingWhId){
     const w = db.warehouses.find(x=>x.id===editingWhId);
-    Object.assign(w, {name, shippingCost:num($('#whShip').value), freeShipOver:num($('#whFree').value), minOrder:num($('#whMin').value)});
+    Object.assign(w, {name, country, shippingCost:num($('#whShip').value), freeShipOver:num($('#whFree').value), minOrder:num($('#whMin').value)});
   } else {
-    db.warehouses.push({id:uid(), vendorId:whVendorId, name, shippingCost:num($('#whShip').value),
+    db.warehouses.push({id:uid(), vendorId:whVendorId, name, country, shippingCost:num($('#whShip').value),
       freeShipOver:num($('#whFree').value), minOrder:num($('#whMin').value), uploadDate:null, items:[]});
   }
   save(); $('#whOverlay').classList.remove('open'); renderAll();
@@ -1383,6 +1398,7 @@ function openReview(ex, source, target){
   const vendor = db.vendors.find(v=>v.id===(wh?wh.vendorId:target.vendorId));
   $('#reviewMeta').textContent = `— ${ex.items.length} items from ${source} → ${vendor?vendor.name:'?'}`;
   $('#rvWhName').value = wh ? wh.name : 'Warehouse '+(db.warehouses.filter(w=>w.vendorId===target.vendorId).length+1);
+  $('#rvCountry').value = wh&&wh.country?wh.country:'';
   $('#rvShip').value = ex.shipping!=null?ex.shipping:(wh&&wh.shippingCost!=null?wh.shippingCost:'');
   $('#rvFree').value = ex.freeOver!=null?ex.freeOver:(wh&&wh.freeShipOver!=null?wh.freeShipOver:'');
   $('#rvMin').value = ex.minOrder!=null?ex.minOrder:(wh&&wh.minOrder!=null?wh.minOrder:'');
@@ -1418,6 +1434,7 @@ $('#rvSave').onclick = ()=>{
     db.warehouses.push(wh);
   }
   wh.name = $('#rvWhName').value.trim() || wh.name || 'Warehouse';
+  wh.country = $('#rvCountry').value || null;
   wh.shippingCost = num($('#rvShip').value);
   wh.freeShipOver = num($('#rvFree').value);
   wh.minOrder = num($('#rvMin').value);
@@ -1559,6 +1576,9 @@ function renderResults(){
   if(offVendors.size){
     entries = entries.map(e=>({...e, offers:e.offers.filter(o=>!offVendors.has(o.wh.vendorId))})).filter(e=>e.offers.length);
   }
+  if(offCountries.size){
+    entries = entries.map(e=>({...e, offers:e.offers.filter(o=>!offCountries.has(o.wh.country||''))})).filter(e=>e.offers.length);
+  }
   if(q){
     const toks = q.split(/\s+/);
     entries = entries.filter(e=>{
@@ -1568,7 +1588,10 @@ function renderResults(){
   }
   entries.sort((a,b)=> a.name.localeCompare(b.name) || (parseNum(a.spec)||0)-(parseNum(b.spec)||0));
   const activeCount = db.vendors.length - offVendors.size;
-  const filterSuffix = offVendors.size ? ` — ${activeCount} of ${db.vendors.length} vendor${db.vendors.length===1?'':'s'}` : '';
+  const suffixParts = [];
+  if(offVendors.size) suffixParts.push(`${activeCount} of ${db.vendors.length} vendor${db.vendors.length===1?'':'s'}`);
+  if(offCountries.size) suffixParts.push(`countries: ${[...new Set(db.warehouses.map(w=>w.country||''))].filter(c=>!offCountries.has(c)).map(c=>c?countryFlag(c):'🏳️').join(' ')||'none'}`);
+  const filterSuffix = suffixParts.length ? ` — ${suffixParts.join(' · ')}` : '';
   $('#resultsTitle').textContent = (q ? `Results for “${q}” — ${entries.length} match${entries.length===1?'':'es'}` : `All products (${entries.length})`) + filterSuffix;
   const el = $('#results');
   if(!entries.length){
@@ -1668,6 +1691,27 @@ function renderVendorToggles(){
     const id = chip.dataset.vtoggle;
     if(offVendors.has(id)) offVendors.delete(id); else offVendors.add(id);
     renderVendorToggles(); renderResults();
+  });
+}
+const offCountries = new Set(); // country codes toggled off ('' = unspecified); empty set = show all
+function renderCountryToggles(){
+  const present = new Set(db.warehouses.map(w=>w.country||''));
+  for(const c of [...offCountries]) if(!present.has(c)) offCountries.delete(c); // drop stale filters
+  const el = $('#countryToggles');
+  const order = ['US','CN',''].filter(c=>present.has(c));
+  if(order.length<2){ el.innerHTML=''; return; } // nothing to filter by
+  const allActive = offCountries.size===0;
+  el.innerHTML = `<span class="vtoggle all${allActive?' active':''}" data-call>All countries</span>` +
+    order.map(c=>{
+      const on = !offCountries.has(c);
+      const label = (c?countryFlag(c)+' ':'🏳️ ')+countryName(c);
+      return `<span class="vtoggle${on?' active':''}" data-ctoggle="${c}" title="Click to ${on?'hide':'show'} ${label}">${label}</span>`;
+    }).join('');
+  el.querySelector('[data-call]').onclick = ()=>{ offCountries.clear(); renderCountryToggles(); renderResults(); };
+  el.querySelectorAll('[data-ctoggle]').forEach(chip=>chip.onclick = ()=>{
+    const c = chip.dataset.ctoggle;
+    if(offCountries.has(c)) offCountries.delete(c); else offCountries.add(c);
+    renderCountryToggles(); renderResults();
   });
 }
 
@@ -2210,7 +2254,7 @@ window.addEventListener('hashchange', ()=>setView(location.hash.replace('#',''))
 setView(location.hash.replace('#',''));
 
 /* ============ init ============ */
-function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderResults(); renderCartCount(); }
+function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderCountryToggles(); renderResults(); renderCartCount(); }
 renderAll();
 //JS-END
 </script>
