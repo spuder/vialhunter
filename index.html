@@ -448,9 +448,17 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
 );
 alter table vialhunter_sync enable row level security;
 create policy "anon full access" on vialhunter_sync
-  for all using (true) with check (true);</pre>
+  for all using (true) with check (true);
+
+insert into storage.buckets (id, name, public) values ('vialhunter-files', 'vialhunter-files', true);
+create policy "public read vialhunter-files" on storage.objects
+  for select using (bucket_id = 'vialhunter-files');
+create policy "anon write vialhunter-files" on storage.objects
+  for insert with check (bucket_id = 'vialhunter-files');
+create policy "anon delete vialhunter-files" on storage.objects
+  for delete using (bucket_id = 'vialhunter-files');</pre>
       3. In <b>Project Settings → API</b>, copy the <b>Project URL</b> and the <b>anon / public key</b> — paste them above.<br>
-      ⚠ Anyone holding this URL + key can read and write this table, so treat them like a password: use a Supabase project dedicated to this app, and don't paste them anywhere untrusted. Same trust model as the Claude API key above — both live only in this browser.
+      ⚠ Anyone holding this URL + key can read and write this table (and upload/read the storage bucket), so treat them like a password: use a Supabase project dedicated to this app, and don't paste them anywhere untrusted. Same trust model as the Claude API key above — both live only in this browser. The storage bucket is <i>public</i> for simplicity — anyone who gets a specific photo's URL can view that one file, similar to an "anyone with the link" share.
     </div>
   </details>
   <div class="frow"><div><span id="sbStatusText" class="hint">Not connected — data stays in this browser only.</span></div></div>
@@ -458,6 +466,14 @@ create policy "anon full access" on vialhunter_sync
     <button id="sbConnectBtn">🔗 Connect / Sync now</button>
     <button id="sbDisconnectBtn" class="danger" style="display:none">Disconnect</button>
   </div>
+  <div class="mfoot" id="sbOptimizeRow" style="justify-content:flex-start;margin-top:6px;display:none">
+    <button id="sbOptimizeBtn">🗜 Upload local photos to Storage now</button>
+  </div>
+  <p class="hint" id="sbOptimizeHint" style="margin-top:4px;display:none">New photos/COAs/lab reports upload to Supabase Storage automatically once connected, so only a lightweight link syncs instead of the full image — that's what keeps mobile devices from running out of storage. This button retroactively uploads any photos already stored inline (from before you connected, or from before this feature existed) so they stop bloating every device's local copy.</p>
+  <div class="mfoot" style="justify-content:flex-start;margin-top:6px">
+    <button id="sbClearLocalBtn" class="danger">🗑 Clear local data on this device</button>
+  </div>
+  <p class="hint" style="margin-top:4px">Wipes vendors/cart/orders stored in <i>this browser only</i> (useful if this device's storage is full, e.g. the "Storage is full" warning on mobile). If sync is on, the latest data re-downloads from Supabase right after — nothing is deleted from Supabase. If sync is off, this deletes the data permanently unless you've exported a backup.</p>
 
   <details id="sbDiagDetails" style="margin:10px 0 0">
     <summary style="cursor:pointer;color:var(--text)">🩺 Connection diagnostics</summary>
@@ -688,7 +704,8 @@ function renderVendors(){
       e.preventDefault(); card.classList.remove('dragover');
       const f = e.dataTransfer.files[0]; if(!f) return;
       if(f.type.startsWith('image/')) readImage(f, data=>{ v.photo=data; save(); renderVendors(); });
-      else if(/\.vcf$/i.test(f.name)) f.text().then(t=>{ applyVcard(v, t); save(); renderVendors(); toast('Contact card merged'); });
+      else if(/\.vcf$/i.test(f.name)) f.text().then(t=>{ applyVcard(v, t); save(); renderVendors(); toast('Contact card merged');
+        if(v.photo) maybeUploadToStorage(v.photo, 'photos', 'vcard.jpg').then(url=>{ v.photo=url; save(); renderVendors(); }); });
     });
     g.appendChild(card);
   }
@@ -705,7 +722,8 @@ function renderVendors(){
     if(f.type.startsWith('image/')) readImage(f, data=>{ openVendorModal(null); vmPhotoData=data; $('#vmPhoto').innerHTML=`<img src="${data}">`; });
     else if(/\.vcf$/i.test(f.name)) f.text().then(t=>{ const tmp={}; applyVcard(tmp,t); openVendorModal(null);
       $('#vmName').value=tmp.name||''; $('#vmPhone').value=tmp.phone||'';
-      if(tmp.photo){ vmPhotoData=tmp.photo; $('#vmPhoto').innerHTML=`<img src="${tmp.photo}">`; } });
+      if(tmp.photo){ vmPhotoData=tmp.photo; $('#vmPhoto').innerHTML=`<img src="${tmp.photo}">`;
+        maybeUploadToStorage(tmp.photo, 'photos', 'vcard.jpg').then(url=>{ vmPhotoData=url; $('#vmPhoto').innerHTML=`<img src="${url}">`; }); } });
   });
   g.appendChild(add);
 
@@ -767,7 +785,7 @@ function readImage(file, cb){
       const s = Math.min(1, 200/Math.max(img.width, img.height));
       c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
       c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      cb(c.toDataURL('image/jpeg',.85));
+      maybeUploadToStorage(c.toDataURL('image/jpeg',.85), 'photos', file.name||'photo.jpg').then(cb);
     };
     img.src = r.result;
   };
@@ -948,13 +966,15 @@ document.addEventListener('keydown', e=>{
 });
 function readFileRaw(file, cb){
   const r = new FileReader();
-  r.onload = ()=>cb({name:file.name, data:r.result, type:file.type||''});
+  r.onload = ()=>maybeUploadToStorage(r.result, 'files', file.name).then(data=>cb({name:file.name, data, type:file.type||''}));
   r.readAsDataURL(file);
 }
 /* Everything saved here lives as a base64 data URL inside localStorage, which
    most browsers cap around 5-10MB per origin — a handful of full-resolution
    phone photos blows that instantly. Downscale images before storing (PDFs
-   can't be shrunk this way, so those still go through raw). */
+   can't be shrunk this way, so those still go through raw). When Supabase is
+   connected, maybeUploadToStorage swaps the data: URL for a Storage URL before
+   the callback fires, so only a lightweight link ever gets synced. */
 function readFileSmart(file, cb){
   if(!(file.type||'').startsWith('image/')){ readFileRaw(file, cb); return; }
   const r = new FileReader();
@@ -966,7 +986,7 @@ function readFileSmart(file, cb){
       const c = document.createElement('canvas');
       c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
       c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      cb({name:file.name, data:c.toDataURL('image/jpeg',.82), type:'image/jpeg'});
+      maybeUploadToStorage(c.toDataURL('image/jpeg',.82), 'files', file.name).then(data=>cb({name:file.name, data, type:'image/jpeg'}));
     };
     img.onerror = ()=>readFileRaw(file, cb);
     img.src = r.result;
@@ -1955,6 +1975,70 @@ function buildSyncPayload(){
   return {vendors: db.vendors, warehouses: db.warehouses, cart: db.cart, settings: s, orders: ordersDb.orders};
 }
 function payloadHasData(p){ return !!p && ((p.vendors&&p.vendors.length) || (p.orders&&p.orders.length)); }
+
+/* ---- Just-in-time photo/file loading ----
+   Every photo, COA, and lab report is otherwise stored as a base64 data: URL
+   inline in the synced JSON, so every paired device downloads and holds the
+   full binary content of every image — that's what blows past mobile
+   localStorage quotas. When Supabase is connected, uploads instead go to a
+   public Storage bucket and only the resulting URL is synced; the browser's
+   own <img>/<a> tags then fetch the actual bytes on demand (and cache them),
+   so a device only ever downloads photos it actually views. */
+const STORAGE_BUCKET = 'vialhunter-files';
+function dataUrlToBlob(dataUrl){
+  const comma = dataUrl.indexOf(',');
+  const meta = dataUrl.slice(0, comma), b64 = dataUrl.slice(comma+1);
+  const mime = (/data:(.*?);base64/.exec(meta) || [,'application/octet-stream'])[1];
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type: mime});
+}
+/* Uploads a local data: URL to Storage and returns the public URL, or returns
+   the original data: URL unchanged if not connected or the upload fails —
+   callers always get something displayable either way. */
+async function maybeUploadToStorage(dataUrl, folder, filename){
+  if(!db.settings.supabaseEnabled || !dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+  try{
+    const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
+    const blob = dataUrlToBlob(dataUrl);
+    const safeName = (filename||'file').replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path = folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safeName;
+    const {error} = await client.storage.from(STORAGE_BUCKET).upload(path, blob, {contentType: blob.type});
+    if(error) throw error;
+    const {data} = client.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  }catch(err){
+    logDiag('✗ Photo/file upload to Storage failed, keeping it on this device only: '+describeError(err));
+    return dataUrl;
+  }
+}
+/* One-time cleanup for photos/files already stored inline (from before this
+   device connected, or from before this feature existed) — walks everything
+   currently in memory and swaps any data: URL for a Storage URL. */
+async function optimizeLocalPhotosToStorage(){
+  if(!db.settings.supabaseEnabled){ toastErr('Connect to Supabase first, then optimize.'); return; }
+  const refs = [];
+  const addRef = (obj, key) => { if(obj && typeof obj[key]==='string' && obj[key].startsWith('data:')) refs.push({obj, key}); };
+  db.vendors.forEach(v=>{ addRef(v,'photo'); (v.contacts||[]).forEach(c=>addRef(c,'photo')); });
+  ordersDb.orders.forEach(o=>{
+    (o.photos||[]).forEach(p=>addRef(p,'data'));
+    (o.coas||[]).forEach(c=>addRef(c,'data'));
+    (o.tests||[]).forEach(t=>(t.resultsFiles||[]).forEach(f=>addRef(f,'data')));
+  });
+  if(!refs.length){ toast('Nothing to optimize — no inline photos/files found on this device.'); return; }
+  logDiag('Uploading '+refs.length+' local photo/file(s) to Storage…');
+  let uploaded = 0;
+  for(const ref of refs){
+    const before = ref.obj[ref.key];
+    const after = await maybeUploadToStorage(before, 'files', 'file.jpg');
+    if(after !== before){ ref.obj[ref.key] = after; uploaded++; }
+  }
+  save(); saveOrders(); renderAll();
+  const failed = refs.length - uploaded;
+  logDiag('✓ Uploaded '+uploaded+' of '+refs.length+(failed?(' — '+failed+' failed and stayed on this device'):''));
+  toast('Uploaded '+uploaded+' photo/file(s) to Storage.'+(failed?(' '+failed+' stayed local (upload failed).'):''));
+}
 async function fetchRemoteRow(url, key){
   const client = await getSbClient(url, key);
   logDiag('Querying vialhunter_sync table at '+url+' …');
@@ -1963,10 +2047,29 @@ async function fetchRemoteRow(url, key){
   logDiag('✓ Query OK — '+(data ? 'existing row found.' : 'no row yet (empty project).'));
   return data; // null if no row yet
 }
-async function pushToSupabase(silent){
+/* `force` bypasses the empty-data guard below — only pass it from a flow where
+   the user has just explicitly confirmed overwriting Supabase (e.g. "Use this
+   device's data"), or where the caller already just proved the push is safe. */
+async function pushToSupabase(silent, force){
   if(!db.settings.supabaseEnabled) return;
   try{
     const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
+    if(!force){
+      // A background push (every edit debounces one) must never silently overwrite
+      // real Supabase data with a device that looks empty — e.g. the very first
+      // load, before the initial pull below has finished, but the user already
+      // touched something else and triggered a save(). Refuse and ask instead.
+      const {data: existing} = await client.from('vialhunter_sync').select('data').eq('id','default').maybeSingle();
+      const remoteData = (existing && existing.data) || {};
+      const localOrders = ordersDb.orders.length, localVendors = db.vendors.length;
+      const remoteOrders = (remoteData.orders||[]).length, remoteVendors = (remoteData.vendors||[]).length;
+      if(looksLikeDataLoss(remoteOrders, localOrders) || looksLikeDataLoss(remoteVendors, localVendors)){
+        logDiag('⚠ Skipped push: this device has '+localOrders+' order(s)/'+localVendors+' vendor(s) but Supabase already has '+remoteOrders+'/'+remoteVendors+' — refusing to overwrite with what looks like an empty/incomplete local copy. Open Settings to resolve manually if this device being empty is intentional.');
+        syncMeta.lastError = 'Push skipped — this device looks empty compared to Supabase. Open Settings to resolve.';
+        saveSyncMeta(); updateSyncStatusUI();
+        return;
+      }
+    }
     const nowIso = new Date().toISOString();
     logDiag('Pushing current data to Supabase…');
     const {error} = await client.from('vialhunter_sync').upsert({id:'default', data: buildSyncPayload(), updated_at: nowIso});
@@ -1990,6 +2093,38 @@ function applyRemoteSnapshot(remote){
   suppressSync = false;
   renderAll(); applyBlur(db.settings.blurSensitive);
 }
+/* Silent last-write-wins sync is dangerous the moment one side is legitimately
+   empty (a fresh tab/device, a first-ever connect, a stale copy) — applying it
+   automatically can wipe real orders/vendors with no warning at all. Whenever
+   one side has data and the other is completely empty, pause and ask instead
+   of guessing, reusing the same conflict modal shown on first pairing. A
+   partial change (e.g. one order added or removed) is not "empty" and still
+   syncs silently, same as before — this only catches the all-or-nothing case. */
+function looksLikeDataLoss(fromCount, toCount){ return fromCount > 0 && toCount === 0; }
+async function reconcileWithRemote(){
+  const remote = await fetchRemoteRow(db.settings.supabaseUrl, db.settings.supabaseKey);
+  const remoteData = (remote && remote.data) || {};
+  const remoteNewer = !!(remote && remote.updated_at && (!syncMeta.lastSyncedAt || new Date(remote.updated_at) > new Date(syncMeta.lastSyncedAt)));
+  const localOrders = ordersDb.orders.length, localVendors = db.vendors.length;
+  const remoteOrders = (remoteData.orders||[]).length, remoteVendors = (remoteData.vendors||[]).length;
+  const pullWouldWipeLocal = remoteNewer && (looksLikeDataLoss(localOrders, remoteOrders) || looksLikeDataLoss(localVendors, remoteVendors));
+  const pushWouldWipeRemote = !remoteNewer && remote && (looksLikeDataLoss(remoteOrders, localOrders) || looksLikeDataLoss(remoteVendors, localVendors));
+  if(pullWouldWipeLocal || pushWouldWipeRemote){
+    logDiag('⚠ Paused auto-sync: this device has '+localOrders+' order(s)/'+localVendors+' vendor(s), Supabase has '+remoteOrders+' order(s)/'+remoteVendors+' vendor(s) — one side is empty, so this needs a manual choice to avoid wiping real data.');
+    syncMeta.lastError = 'Sync paused — one side has no data. Resolve in Settings to avoid losing anything.';
+    saveSyncMeta();
+    sbPending = {url: db.settings.supabaseUrl, key: db.settings.supabaseKey, remote: remoteData};
+    openSbConflict('Sync mismatch — which data should win?',
+      'This device has '+localOrders+' order(s) / '+localVendors+' vendor(s). Supabase has '+remoteOrders+' order(s) / '+remoteVendors+' vendor(s). One side is empty, so auto-sync paused rather than risk erasing the other — pick which one is correct.', true);
+    return;
+  }
+  if(remoteNewer){
+    applyRemoteSnapshot(remoteData);
+    syncMeta.lastSyncedAt = remote.updated_at; syncMeta.lastError = null; saveSyncMeta();
+  } else {
+    await pushToSupabase(true, true); // already just proved above this push isn't destructive
+  }
+}
 function fmtSyncTime(iso){
   if(!iso) return 'never';
   const d = new Date(iso);
@@ -2006,6 +2141,7 @@ function updateSyncStatusUI(){
     else{ icon.textContent='☁'; ind.title='Synced with Supabase — last synced '+fmtSyncTime(syncMeta.lastSyncedAt); dot.style.display='block'; }
   }
   const statusText = $('#sbStatusText'), connectBtn = $('#sbConnectBtn'), disconnectBtn = $('#sbDisconnectBtn'), qrDetails = $('#sbQrDetails');
+  const optimizeRow = $('#sbOptimizeRow'), optimizeHint = $('#sbOptimizeHint');
   if(!statusText) return;
   if(enabled){
     statusText.textContent = syncMeta.lastError ? ('⚠ Connected, but last sync failed: '+syncMeta.lastError) : ('✅ Synced — last synced '+fmtSyncTime(syncMeta.lastSyncedAt));
@@ -2016,6 +2152,8 @@ function updateSyncStatusUI(){
     connectBtn.textContent = '🔗 Connect / Sync now';
     disconnectBtn.style.display = 'none';
   }
+  if(optimizeRow) optimizeRow.style.display = enabled ? '' : 'none';
+  if(optimizeHint) optimizeHint.style.display = enabled ? '' : 'none';
   if(qrDetails) qrDetails.style.display = enabled ? '' : 'none';
 }
 let sbPending = null; // {url, key, remote} awaiting a conflict-modal decision
@@ -2078,7 +2216,10 @@ $('#sbConflictLocal').onclick = async ()=>{
   if(!sbPending) return closeSbConflict();
   const {url, key} = sbPending; closeSbConflict();
   db.settings.supabaseUrl = url; db.settings.supabaseKey = key; db.settings.supabaseEnabled = true; save();
-  await pushToSupabase();
+  // Upload any existing inline photos/COAs/lab reports to Storage before the
+  // first push, so the migrated data doesn't start out full of heavy base64 blobs.
+  await optimizeLocalPhotosToStorage();
+  await pushToSupabase(false, true); // explicit, user-confirmed "use this device's data" — bypass the empty-data guard
   if(!syncMeta.lastError) toast('This device\'s data was pushed to Supabase.');
   $('#settingsBtn').click();
 };
@@ -2098,6 +2239,28 @@ $('#sbDisconnectBtn').onclick = ()=>{
   updateSyncStatusUI();
 };
 $('#syncIndicator').onclick = ()=>$('#settingsBtn').click();
+/* Frees up this device's localStorage (the usual reason: mobile browsers cap it
+   far lower than desktop, and synced order photos/COAs/lab reports can exceed it). */
+$('#sbClearLocalBtn').onclick = ()=>{
+  const enabled = db.settings.supabaseEnabled;
+  const msg = enabled
+    ? 'Clear vendors/cart/orders stored in THIS browser? Since sync is on, the latest data re-downloads from Supabase right after — nothing is deleted from Supabase.'
+    : 'Clear vendors/cart/orders stored in THIS browser? Sync is off, so this deletes the data permanently unless you\'ve exported a backup first.';
+  if(!confirm(msg)) return;
+  db.vendors = []; db.warehouses = []; db.cart = [];
+  ordersDb.orders = [];
+  // Forget the last-synced timestamp so the reload below pulls fresh from Supabase
+  // instead of seeing this now-empty local state as "unsynced" and pushing it up,
+  // which would wipe the remote copy.
+  syncMeta.lastSyncedAt = null; saveSyncMeta();
+  save(); saveOrders();
+  location.reload();
+};
+$('#sbOptimizeBtn').onclick = async ()=>{
+  const btn = $('#sbOptimizeBtn'); const prev = btn.textContent; btn.textContent = 'Uploading…'; btn.disabled = true;
+  try{ await optimizeLocalPhotosToStorage(); }
+  finally{ btn.textContent = prev; btn.disabled = false; }
+};
 
 /* ---- Pair-by-QR: the code is just a link back to this page with the Supabase
    URL/key as query params (see reconcileOnLoad below for the scanning side).
@@ -2162,13 +2325,7 @@ $('#sbQrHideBtn').onclick = hideQr;
   updateSyncStatusUI();
   if(!db.settings.supabaseEnabled) return;
   try{
-    const remote = await fetchRemoteRow(db.settings.supabaseUrl, db.settings.supabaseKey);
-    if(remote && remote.updated_at && (!syncMeta.lastSyncedAt || new Date(remote.updated_at) > new Date(syncMeta.lastSyncedAt))){
-      applyRemoteSnapshot(remote.data);
-      syncMeta.lastSyncedAt = remote.updated_at; syncMeta.lastError = null; saveSyncMeta();
-    } else {
-      await pushToSupabase(true);
-    }
+    await reconcileWithRemote();
   }catch(err){
     syncMeta.lastError = err.message||String(err); saveSyncMeta();
   }

@@ -38,6 +38,8 @@ Header row with `Code, Name, Specification, Price` columns (order/extra columns 
 
 Pair your own free Supabase project in ⚙ Settings to sync vendors, cart, and orders across devices. Off by default — the app stays no-build/no-server/no-auth until you actually connect one.
 
+Photos, COAs, and lab reports upload to a Supabase Storage bucket rather than syncing inline — only a link travels through the synced data, and the browser fetches/caches the actual image only when it's actually viewed. That's what keeps a phone from running out of local storage just because a desktop's order history is photo-heavy. A "🗜 Upload local photos to Storage now" button in Settings retroactively converts any photos still stored inline (from before connecting, or from before this existed).
+
 **Header indicator — local vs. synced storage**
 
 ![VialHunter header showing the 💻 local-storage indicator next to the logo](assets/vialhunter-supabase-header-local.png)
