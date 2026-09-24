@@ -119,6 +119,11 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .ordthumb{width:48px;height:48px;border-radius:8px;overflow:hidden;cursor:zoom-in;border:1px solid var(--border);flex-shrink:0}
 .ordthumb img{width:100%;height:100%;object-fit:cover}
 .ordthumb:hover{border-color:var(--accent)}
+.ordthumb.doc{cursor:pointer;background:var(--panel2);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;line-height:1.2;color:var(--muted);text-align:center;padding:2px;word-break:break-all;overflow:hidden}
+.ordthumb.doc b{font-size:16px;font-weight:400;line-height:1}
+.ordsection{display:flex;flex-direction:column;gap:4px}
+.ordsection .slabel{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.ordcontents{white-space:pre-wrap;font-size:13px;color:var(--text);background:var(--panel2);border-radius:8px;padding:6px 10px}
 
 /* stepper: dots + connecting lines, left to right */
 .stepper{display:flex;align-items:flex-start;margin:4px 0}
@@ -131,6 +136,11 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .step .label{font-size:11px;color:var(--muted);margin-top:5px;white-space:nowrap}
 .step.done .label{color:var(--text);font-weight:600}
 .step.current .dot{box-shadow:0 0 0 3px var(--pinbg)}
+.step .sdate{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap}
+.stagedates{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.stagedates>div{flex:1;min-width:120px}
+.stagedates label{font-size:11px}
+.filetile.doc span{cursor:pointer}
 
 /* results */
 table{width:100%;border-collapse:collapse}
@@ -370,8 +380,9 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <input type="file" id="ordCoaFile" accept=".pdf,image/*" multiple style="display:none">
 
   <div class="frow"><div>
-    <label>Progress — click a step to mark it reached</label>
+    <label>Progress — click a step to mark it reached, then adjust its date if needed</label>
     <div class="stepper" id="ordStepper"></div>
+    <div class="stagedates" id="ordStageDates"></div>
   </div></div>
 
   <div class="testingblock">
@@ -427,7 +438,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <p class="hint">Your key never leaves this browser except to call api.anthropic.com directly. All vendor/price data is stored in this browser's localStorage — use Export regularly to back up.</p>
 
   <h3 style="margin-top:22px">☁ Supabase sync <span class="hint" style="font-weight:400">(optional)</span></h3>
-  <p class="hint" style="margin-bottom:10px">Everything stays in this browser's localStorage by default. Pairing a Supabase project lets you sync vendors, cart, and orders across devices (e.g. a phone and a laptop).</p>
+  <p class="hint" style="margin-bottom:10px">Everything stays in this browser by default (vendors in localStorage, orders and their files in IndexedDB). Pairing a Supabase project lets you sync vendors, cart, and orders across devices (e.g. a phone and a laptop).</p>
   <div class="frow"><div>
     <label>Supabase project URL</label>
     <input id="setSbUrl" placeholder="https://xxxxxxxx.supabase.co">
@@ -554,28 +565,82 @@ function save(){
   scheduleSync();
 }
 
-/* Orders live in their own localStorage key/JSON, deliberately separate from
-   vendors/warehouses: price-list data is meant to be shared between people,
-   orders are personal purchase history and must never ride along in a shared
-   vendor export/import. */
+/* Orders live in their own store, deliberately separate from vendors/warehouses:
+   price-list data is meant to be shared between people, orders are personal
+   purchase history and must never ride along in a shared vendor export/import.
+   Orders carry photos/COAs/lab-report PDFs as data URLs, which blow through
+   localStorage's ~5MB cap after a few orders — so they're cached in IndexedDB
+   (quota is a share of free disk, typically hundreds of MB+) instead, with
+   Supabase as the cross-device copy when paired. IndexedDB is async, so
+   ordersReady gates everything that reads orders at startup. */
 const ORDERS_KEY = 'vialhunterOrdersDB_v1';
-let ordersDb = loadOrders();
-function loadOrders(){
-  try{ const d = JSON.parse(localStorage.getItem(ORDERS_KEY)); if(d && Array.isArray(d.orders)) return d; }catch(e){}
-  return {orders:[]};
-}
+let ordersDb = {orders:[]};
+let ordersLoaded = false;
+const idbStore = (function(){
+  let p = null;
+  function open(){
+    if(!p) p = new Promise((resolve, reject)=>{
+      if(!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
+      const req = indexedDB.open('vialhunter', 1);
+      req.onupgradeneeded = ()=>req.result.createObjectStore('kv');
+      req.onsuccess = ()=>resolve(req.result);
+      req.onerror = ()=>reject(req.error);
+    });
+    return p;
+  }
+  function tx(mode, fn){
+    return open().then(idb=>new Promise((resolve, reject)=>{
+      const t = idb.transaction('kv', mode);
+      const req = fn(t.objectStore('kv'));
+      t.oncomplete = ()=>resolve(req && req.result);
+      t.onerror = t.onabort = ()=>reject(t.error || (req && req.error));
+    }));
+  }
+  return {
+    get: key=>tx('readonly', st=>st.get(key)),
+    set: (key, val)=>tx('readwrite', st=>st.put(val, key))
+  };
+})();
+let idbOk = true;
+let ordersWriteChain = Promise.resolve();
 function saveOrders(){
-  try{ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
-  catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some order photos/COAs/lab reports, or Export orders as a backup and clear old ones.'); else throw e; }
+  if(!ordersLoaded) return; // never overwrite the stored copy with the empty pre-load placeholder
   scheduleSync();
+  if(idbOk){
+    // Snapshot now so later in-memory edits can't race the queued write
+    const snap = JSON.parse(JSON.stringify(ordersDb));
+    ordersWriteChain = ordersWriteChain.then(()=>idbStore.set(ORDERS_KEY, snap)).catch(e=>{
+      if(isQuotaError(e)) toastErr('⚠ Browser storage is full — '+(db.settings.supabaseEnabled ? 'orders are still synced to Supabase, but this device\'s offline copy could not be updated.' : 'remove some order photos/COAs/lab reports, or Export orders and clear old ones.'));
+      else console.error('Saving orders to IndexedDB failed', e);
+    });
+    return;
+  }
+  try{ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
+  catch(e){ if(isQuotaError(e) && !db.settings.supabaseEnabled) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some order photos/COAs/lab reports, or Export orders as a backup and clear old ones.'); else if(!isQuotaError(e)) throw e; }
 }
-// One-time migration for anyone who had orders briefly stored inside the main db.
-if(Array.isArray(db.orders)){
-  if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
-  delete db.orders; save();
-}
+const ordersReady = (async function loadOrders(){
+  let legacy = null;
+  try{ const d = JSON.parse(localStorage.getItem(ORDERS_KEY)); if(d && Array.isArray(d.orders)) legacy = d; }catch(e){}
+  let stored = null;
+  try{ stored = await idbStore.get(ORDERS_KEY); }
+  catch(e){ idbOk = false; console.warn('IndexedDB unavailable, falling back to localStorage for orders', e); }
+  ordersDb = (stored && Array.isArray(stored.orders)) ? stored : (legacy || {orders:[]});
+  ordersLoaded = true;
+  if(idbOk && legacy){
+    // One-time move out of localStorage; only drop the old copy once IndexedDB has it.
+    if(!stored) saveOrders();
+    ordersWriteChain.then(()=>{ try{ localStorage.removeItem(ORDERS_KEY); }catch(e){} });
+  }
+  // One-time migration for anyone who had orders briefly stored inside the main db.
+  if(Array.isArray(db.orders)){
+    if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
+    delete db.orders; save();
+  }
+  migrateOrderPhotos();
+  migrateOrderTests();
+})();
 // One-time migration: single `photo` field -> `photos` array (multi-photo support).
-(function migrateOrderPhotos(){
+function migrateOrderPhotos(){
   let changed = false;
   ordersDb.orders.forEach(o=>{
     if(o.photo && !o.photos){ o.photos = [{name:'photo', data:o.photo}]; delete o.photo; changed = true; }
@@ -583,9 +648,9 @@ if(Array.isArray(db.orders)){
     if(!o.coas){ o.coas = []; changed = true; }
   });
   if(changed) saveOrders();
-})();
+}
 // One-time migration: single `testing` object -> `tests` array (multiple independent lab tests per order).
-(function migrateOrderTests(){
+function migrateOrderTests(){
   let changed = false;
   ordersDb.orders.forEach(o=>{
     if(!Array.isArray(o.tests)){
@@ -597,7 +662,7 @@ if(Array.isArray(db.orders)){
     }
   });
   if(changed) saveOrders();
-})();
+}
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function $(s){ return document.querySelector(s); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -937,6 +1002,23 @@ function renderLightbox(){
   $('#lightboxNext').style.display = multi ? '' : 'none';
 }
 function imageItems(items){ return (items||[]).filter(it=>(it.type||'').startsWith('image/')); }
+function isImageItem(it){ return (it.type||'').startsWith('image/') || /^data:image\//.test(it.data||''); }
+/* Browsers refuse to open a top-level data: URL in a new tab, so PDFs are
+   turned into a blob: URL first. Images open in the lightbox with their siblings. */
+function viewFileItem(items, i){
+  const it = items[i]; if(!it) return;
+  if(isImageItem(it)){ const imgs = items.filter(isImageItem); openLightbox(imgs, imgs.indexOf(it)); return; }
+  fetch(it.data).then(r=>r.blob()).then(b=>{
+    const url = URL.createObjectURL(b.type ? b : new Blob([b], {type:it.type||'application/pdf'}));
+    if(!window.open(url, '_blank')){ const a = document.createElement('a'); a.href = url; a.download = it.name||'file'; a.click(); }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }).catch(()=>toastErr('Could not open '+(it.name||'file')));
+}
+function fileThumbsHtml(items, attrs){
+  return items.map((c,i)=>isImageItem(c)
+    ? `<div class="ordthumb" ${attrs} data-fidx="${i}" title="${esc(c.name||'')} — click to view"><img src="${c.data}"></div>`
+    : `<div class="ordthumb doc" ${attrs} data-fidx="${i}" title="${esc(c.name||'')} — click to open"><b>📄</b>${esc((c.name||'PDF').replace(/\.pdf$/i,'').slice(0,18))}</div>`).join('');
+}
 $('#lightboxClose').onclick = ()=>$('#lightboxOverlay').classList.remove('open');
 $('#lightboxPrev').onclick = ()=>{ lightboxIndex = (lightboxIndex-1+lightboxImages.length)%lightboxImages.length; renderLightbox(); };
 $('#lightboxNext').onclick = ()=>{ lightboxIndex = (lightboxIndex+1)%lightboxImages.length; renderLightbox(); };
@@ -981,6 +1063,7 @@ function stepperHtml(stages, cur, stageDates, idPrefix){
       <div class="line"></div>
       <div class="dot">${done?'✓':s.icon}</div>
       <div class="label">${esc(s.label)}</div>
+      ${done&&dateStr?`<div class="sdate">${esc(dateStr)}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -1012,13 +1095,13 @@ function renderOrders(){
         <div class="ordphoto" ${photos.length?`data-viewphotos="${o.id}"`:`data-editord="${o.id}"`} title="${photos.length?'Click to view full-size':'Add photos'}">${thumbSrc?`<img class="${vendorPhoto?'pii-photo':''}" src="${thumbSrc}">`:'📦'}${thumbBadge}</div>
         <div>
           <div class="ordname"><span class="pii">${vendor?esc(vendor.name):'Order'}</span>${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank" class="pii">${esc(o.trackingNumber)}</a>`:`<span class="pii">${esc(o.trackingNumber)}</span>`}</span>`:''}</div>
-          <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${o.createdAt?' · '+esc(o.createdAt):''}</div>
-          ${coas.length?`<div class="ordmeta">COA: ${coas.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
+          <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${(o.stageDates&&o.stageDates.ordered)||o.createdAt?' · '+esc((o.stageDates&&o.stageDates.ordered)||o.createdAt):''}</div>
         </div>
       </div>
       <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(ORDER_STAGES, stageIndex(o.status), o.stageDates, o.id)}</div>
-      ${o.contents?`<div class="ordmeta" style="white-space:pre-wrap">Contents: ${esc(o.contents)}</div>`:''}
-      ${photos.length?`<div class="ordphotostrip">${photos.map((p,pi)=>`<div class="ordthumb" data-vop="${o.id}" data-vopidx="${pi}" title="Click to view full-size"><img src="${p.data}"></div>`).join('')}</div>`:''}
+      ${o.contents?`<div class="ordsection"><div class="slabel">Contents</div><div class="ordcontents">${esc(o.contents)}</div></div>`:''}
+      ${photos.length?`<div class="ordsection"><div class="slabel">Photos</div><div class="ordphotostrip">${photos.map((p,pi)=>`<div class="ordthumb" data-vop="${o.id}" data-vopidx="${pi}" title="Click to view full-size"><img src="${p.data}"></div>`).join('')}</div></div>`:''}
+      ${coas.length?`<div class="ordsection"><div class="slabel">COAs</div><div class="ordphotostrip">${fileThumbsHtml(coas, `data-vcoa="${o.id}"`)}</div></div>`:''}
       ${tests.map((t,ti)=>{
         const sampleTrackUrl = trackingUrl(t.sampleCarrier, t.sampleTrackingNumber);
         return `<div class="testingblock">
@@ -1027,7 +1110,7 @@ function renderOrders(){
         ${t.sampleTrackingNumber?`<div class="ordmeta">Sample: ${esc(t.sampleCarrier||'')} ${sampleTrackUrl?`<a href="${sampleTrackUrl}" target="_blank" class="pii">${esc(t.sampleTrackingNumber)}</a>`:`<span class="pii">${esc(t.sampleTrackingNumber)}</span>`}</div>`:''}
         ${t.facilitatorUrl?`<div class="ordmeta">Facilitator: <a href="${esc(normalizeUrl(t.facilitatorUrl))}" target="_blank">${esc(t.facilitatorUrl)}</a></div>`:''}
         ${t.results?`<div class="ordmeta">Results: ${esc(t.results)}</div>`:''}
-        ${(t.resultsFiles||[]).length?`<div class="ordmeta">Report: ${t.resultsFiles.map(c=>`<a href="${c.data}" download="${esc(c.name)}" target="_blank">📄 ${esc(c.name)}</a>`).join(' · ')}</div>`:''}
+        ${(t.resultsFiles||[]).length?`<div class="ordsection"><div class="slabel">Report</div><div class="ordphotostrip">${fileThumbsHtml(t.resultsFiles, `data-vtest="${o.id}" data-vtestidx="${ti}"`)}</div></div>`:''}
       </div>`;
       }).join('')}
       <div class="ordfoot">
@@ -1051,6 +1134,14 @@ function renderOrders(){
   g.querySelectorAll('[data-vop]').forEach(el=>{
     const o = ordersDb.orders.find(x=>x.id===el.dataset.vop);
     el.onclick = ()=>openLightbox(o.photos, +el.dataset.vopidx);
+  });
+  g.querySelectorAll('[data-vcoa]').forEach(el=>{
+    const o = ordersDb.orders.find(x=>x.id===el.dataset.vcoa);
+    el.onclick = ()=>viewFileItem(o.coas, +el.dataset.fidx);
+  });
+  g.querySelectorAll('[data-vtest]').forEach(el=>{
+    const o = ordersDb.orders.find(x=>x.id===el.dataset.vtest);
+    el.onclick = ()=>viewFileItem(o.tests[+el.dataset.vtestidx].resultsFiles, +el.dataset.fidx);
   });
   g.querySelectorAll('[data-delord]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this order?')){
     ordersDb.orders = ordersDb.orders.filter(o=>o.id!==b.dataset.delord); saveOrders(); renderOrders(); }});
@@ -1088,7 +1179,7 @@ function renderOrders(){
   });
 }
 
-let editingOrderId = null, ordEditStatus = 'ordered', ordPhotos = [], ordCoas = [], editTests = [], addFilesForTestIdx = null;
+let editingOrderId = null, ordEditStatus = 'ordered', ordStageDates = {}, ordPhotos = [], ordCoas = [], editTests = [], addFilesForTestIdx = null;
 function openOrderModal(id){
   editingOrderId = id;
   const o = id ? ordersDb.orders.find(x=>x.id===id) : null;
@@ -1107,16 +1198,41 @@ function openOrderModal(id){
   renderOrdPhotoStrip();
   renderOrdCoaStrip();
   ordEditStatus = o ? (o.status||'ordered') : 'ordered';
+  ordStageDates = advanceStageDates(o ? Object.assign({ordered:o.createdAt}, o.stageDates) : {}, ORDER_STAGES, stageIndex(ordEditStatus));
   renderOrdStepperPreview();
   editTests = o && Array.isArray(o.tests) ? JSON.parse(JSON.stringify(o.tests)) : [];
   renderTestsContainer();
   $('#orderOverlay').classList.add('open');
 }
+/* Stage dates are stored as locale date strings (what the cards display);
+   <input type=date> needs YYYY-MM-DD, so convert both ways. A string the
+   browser can't parse just shows as an empty picker rather than a wrong date. */
+function toIsoDate(str){
+  if(!str) return '';
+  const d = new Date(str);
+  if(isNaN(d)) return '';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fromIsoDate(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso||'');
+  return m ? new Date(+m[1], +m[2]-1, +m[3]).toLocaleDateString() : '';
+}
 function renderOrdStepperPreview(){
   const el = $('#ordStepper');
-  const dates = (editingOrderId&&ordersDb.orders.find(x=>x.id===editingOrderId)||{}).stageDates;
-  el.innerHTML = stepperHtml(ORDER_STAGES, stageIndex(ordEditStatus), dates, 'preview');
-  wireSteppers(el, idx=>{ ordEditStatus = ORDER_STAGES[idx].key; renderOrdStepperPreview(); });
+  const cur = stageIndex(ordEditStatus);
+  el.innerHTML = stepperHtml(ORDER_STAGES, cur, ordStageDates, 'preview');
+  wireSteppers(el, idx=>{
+    ordEditStatus = ORDER_STAGES[idx].key;
+    ordStageDates = idx>=cur ? advanceStageDates(ordStageDates, ORDER_STAGES, idx) : pruneStageDates(ordStageDates, ORDER_STAGES, idx);
+    renderOrdStepperPreview();
+  });
+  const dl = $('#ordStageDates');
+  dl.innerHTML = ORDER_STAGES.slice(0, cur+1).map(st=>`<div><label>${esc(st.label)} date</label><input type="date" data-stagedate="${st.key}" value="${toIsoDate(ordStageDates[st.key])}"></div>`).join('');
+  dl.querySelectorAll('[data-stagedate]').forEach(inp=>inp.onchange=()=>{
+    const v = fromIsoDate(inp.value);
+    if(v) ordStageDates[inp.dataset.stagedate] = v; else delete ordStageDates[inp.dataset.stagedate];
+    renderOrdStepperPreview();
+  });
 }
 function newTest(){
   return {id:uid(), lab:'', sampleCarrier:'FedEx', sampleTrackingNumber:'', facilitatorUrl:'', results:'', resultsFiles:[], status:null, stageDates:{}};
@@ -1176,13 +1292,10 @@ function renderTestFileStripFor(i){
   el.innerHTML = files.map((c,fi)=>{
     const isImg = (c.type||'').startsWith('image/');
     const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
-    return `<div class="filetile doc" title="${isImg?'Click to view full-size':esc(c.name)}">${isImg?`<img src="${c.data}" data-viewtestfile="${fi}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmtestfile="${fi}" title="Remove">✕</button></div>`;
+    return `<div class="filetile doc" title="${esc(c.name)} — click to ${isImg?'view':'open'}">${isImg?`<img src="${c.data}" data-viewtestfile="${fi}">`:`<span data-viewtestfile="${fi}">📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmtestfile="${fi}" title="Remove">✕</button></div>`;
   }).join('') + `<div class="filetile add" data-addtestfile title="Add results file(s)">+</div>`;
   el.querySelectorAll('[data-rmtestfile]').forEach(b=>b.onclick=()=>{ files.splice(+b.dataset.rmtestfile,1); renderTestFileStripFor(i); });
-  el.querySelectorAll('[data-viewtestfile]').forEach(img=>{
-    const fi = +img.dataset.viewtestfile;
-    img.onclick = ()=>{ const imgs = imageItems(files); openLightbox(imgs, imgs.indexOf(files[fi])); };
-  });
+  el.querySelectorAll('[data-viewtestfile]').forEach(t=>t.onclick=()=>viewFileItem(files, +t.dataset.viewtestfile));
   el.querySelector('[data-addtestfile]').onclick = ()=>{ addFilesForTestIdx = i; $('#testResultFile').click(); };
   el.addEventListener('dragover', e=>{e.preventDefault(); el.classList.add('dragover');});
   el.addEventListener('dragleave', ()=>el.classList.remove('dragover'));
@@ -1210,13 +1323,10 @@ function renderOrdCoaStrip(){
   el.innerHTML = ordCoas.map((c,i)=>{
     const isImg = (c.type||'').startsWith('image/');
     const shortName = c.name.length>12 ? c.name.slice(0,10)+'…' : c.name;
-    return `<div class="filetile doc" title="${isImg?'Click to view full-size':esc(c.name)}">${isImg?`<img src="${c.data}" data-viewcoa="${i}">`:`<span>📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmcoa="${i}" title="Remove">✕</button></div>`;
+    return `<div class="filetile doc" title="${esc(c.name)} — click to ${isImg?'view':'open'}">${isImg?`<img src="${c.data}" data-viewcoa="${i}">`:`<span data-viewcoa="${i}">📄<br>${esc(shortName)}</span>`}<button class="rm" type="button" data-rmcoa="${i}" title="Remove">✕</button></div>`;
   }).join('') + `<div class="filetile add" id="ordCoaAdd" title="Add COA(s)">+</div>`;
   el.querySelectorAll('[data-rmcoa]').forEach(b=>b.onclick=()=>{ ordCoas.splice(+b.dataset.rmcoa,1); renderOrdCoaStrip(); });
-  el.querySelectorAll('[data-viewcoa]').forEach(img=>{
-    const i = +img.dataset.viewcoa;
-    img.onclick = ()=>{ const imgs = imageItems(ordCoas); openLightbox(imgs, imgs.indexOf(ordCoas[i])); };
-  });
+  el.querySelectorAll('[data-viewcoa]').forEach(t=>t.onclick=()=>viewFileItem(ordCoas, +t.dataset.viewcoa));
   $('#ordCoaAdd').onclick = ()=>$('#ordCoaFile').click();
 }
 function addOrdPhotos(files){
@@ -1258,13 +1368,11 @@ $('#ordSave').onclick = ()=>{
     tests: editTests
   };
   const idx = stageIndex(ordEditStatus);
+  const stageDates = pruneStageDates(advanceStageDates(ordStageDates, ORDER_STAGES, idx), ORDER_STAGES, idx);
   if(existing){
-    existing.stageDates = advanceStageDates(existing.stageDates, ORDER_STAGES, idx);
-    Object.assign(existing, data);
+    Object.assign(existing, data, {stageDates, createdAt: stageDates.ordered || existing.createdAt});
   } else {
-    const today = new Date().toLocaleDateString();
-    const stageDates = advanceStageDates({}, ORDER_STAGES, idx);
-    ordersDb.orders.push(Object.assign({id:uid(), createdAt:today, stageDates}, data));
+    ordersDb.orders.push(Object.assign({id:uid(), createdAt: stageDates.ordered || new Date().toLocaleDateString(), stageDates}, data));
   }
   saveOrders(); $('#orderOverlay').classList.remove('open'); renderOrders();
 };
@@ -1965,6 +2073,7 @@ async function fetchRemoteRow(url, key){
 }
 async function pushToSupabase(silent){
   if(!db.settings.supabaseEnabled) return;
+  await ordersReady; // never push the empty pre-load placeholder over real remote orders
   try{
     const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
     const nowIso = new Date().toISOString();
@@ -2144,6 +2253,7 @@ $('#sbQrHideBtn').onclick = hideQr;
 /* On load, reconcile once with Supabase (last-write-wins by timestamp) so opening
    the app on a second device picks up whatever the other device last synced. */
 (async function reconcileOnLoad(){
+  await ordersReady;
   // A QR-code pairing link looks like ?sb_url=...&sb_key=...; scrub it from the
   // address bar immediately so the key doesn't linger in the visible URL/history.
   const params = new URLSearchParams(location.search);
@@ -2256,6 +2366,7 @@ setView(location.hash.replace('#',''));
 /* ============ init ============ */
 function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderCountryToggles(); renderResults(); renderCartCount(); }
 renderAll();
+ordersReady.then(renderOrders);
 //JS-END
 </script>
 </body>
