@@ -679,6 +679,7 @@ const ordersReady = (async function loadOrders(){
     }
     migrateOrderPhotos();
     migrateOrderTests();
+    migrateStageDatesToIso();
   }catch(e){
     ordersLoaded = true;
     console.error('Loading orders failed', e);
@@ -706,6 +707,27 @@ function migrateOrderTests(){
       delete o.testing;
       changed = true;
     }
+  });
+  if(changed) saveOrders();
+}
+// One-time migration: locale date strings -> ISO YYYY-MM-DD for stage dates and
+// createdAt. toIsoDate() is a no-op on values that are already ISO, so re-running
+// is harmless; a value it can't parse is dropped rather than left to misparse.
+function migrateStageDatesToIso(){
+  let changed = false;
+  const fix = holder=>{
+    if(!holder || !holder.stageDates) return;
+    Object.keys(holder.stageDates).forEach(k=>{
+      const cur = holder.stageDates[k];
+      if(!cur || ISO_DATE_RE.test(cur)) return;
+      holder.stageDates[k] = toIsoDate(cur);
+      changed = true;
+    });
+  };
+  ordersDb.orders.forEach(o=>{
+    fix(o);
+    if(Array.isArray(o.tests)) o.tests.forEach(fix);
+    if(o.createdAt && !ISO_DATE_RE.test(o.createdAt)){ o.createdAt = toIsoDate(o.createdAt); changed = true; }
   });
   if(changed) saveOrders();
 }
@@ -967,9 +989,26 @@ const TEST_STAGES = [
 ];
 function stageIndex(status){ const i = ORDER_STAGES.findIndex(s=>s.key===status); return i<0?0:i; }
 function testStageIndex(status){ return TEST_STAGES.findIndex(s=>s.key===status); }
+/* Stage dates are stored as ISO YYYY-MM-DD — the format <input type=date> speaks
+   and the only one that round-trips losslessly. They used to be stored as locale
+   strings, which misparsed outside en-US ("03/10/2026" read back as 10 March on
+   en-GB), so legacy values are converted on load by migrateStageDatesToIso(). */
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+function todayIso(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fmtDate(v){
+  if(!v) return '';
+  const m = ISO_DATE_RE.exec(v);
+  return m ? new Date(+m[1], +m[2]-1, +m[3]).toLocaleDateString() : String(v);
+}
+/* An empty string means "deliberately cleared" and is left alone; only a MISSING
+   key gets back-filled with today, so clearing a date in the form and saving no
+   longer silently resets it to today. */
 function advanceStageDates(existing, stages, idx){
   const d = Object.assign({}, existing);
-  for(let i=0;i<=idx;i++){ if(!d[stages[i].key]) d[stages[i].key] = new Date().toLocaleDateString(); }
+  for(let i=0;i<=idx;i++){ if(d[stages[i].key] === undefined) d[stages[i].key] = todayIso(); }
   return d;
 }
 function pruneStageDates(existing, stages, idx){
@@ -1047,7 +1086,6 @@ function renderLightbox(){
   $('#lightboxPrev').style.display = multi ? '' : 'none';
   $('#lightboxNext').style.display = multi ? '' : 'none';
 }
-function imageItems(items){ return (items||[]).filter(it=>(it.type||'').startsWith('image/')); }
 function isImageItem(it){ return (it.type||'').startsWith('image/') || /^data:image\//.test(it.data||''); }
 /* Browsers refuse to open a top-level data: URL in a new tab, so PDFs are
    turned into a blob: URL first. Images open in the lightbox with their siblings. */
@@ -1104,7 +1142,7 @@ function readFileSmart(file, cb){
 function stepperHtml(stages, cur, stageDates, idPrefix){
   return stages.map((s,i)=>{
     const done = cur>=0 && i<=cur;
-    const dateStr = (stageDates && stageDates[s.key]) || '';
+    const dateStr = fmtDate(stageDates && stageDates[s.key]);
     return `<div class="step${done?' done':''}${i===cur?' current':''}" data-stepwh="${idPrefix}" data-stepidx="${i}" title="${esc(s.label)}${dateStr?' · '+esc(dateStr):''} — click to mark reached">
       <div class="line"></div>
       <div class="dot">${done?'✓':s.icon}</div>
@@ -1141,7 +1179,7 @@ function renderOrders(){
         <div class="ordphoto" ${photos.length?`data-viewphotos="${o.id}"`:`data-editord="${o.id}"`} title="${photos.length?'Click to view full-size':'Add photos'}">${thumbSrc?`<img class="${vendorPhoto?'pii-photo':''}" src="${thumbSrc}">`:'📦'}${thumbBadge}</div>
         <div>
           <div class="ordname"><span class="pii">${vendor?esc(vendor.name):'Order'}</span>${o.trackingNumber?` <span class="meta">· ${esc(o.carrier||'')} ${trackUrl?`<a href="${trackUrl}" target="_blank" class="pii">${esc(o.trackingNumber)}</a>`:`<span class="pii">${esc(o.trackingNumber)}</span>`}</span>`:''}</div>
-          <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${(o.stageDates&&o.stageDates.ordered)||o.createdAt?' · '+esc((o.stageDates&&o.stageDates.ordered)||o.createdAt):''}</div>
+          <div class="ordmeta">${o.paymentAmount!=null?money(o.paymentAmount):'—'}${o.paymentMethod?' · '+esc(o.paymentMethod):''}${fmtDate((o.stageDates&&o.stageDates.ordered)||o.createdAt)?' · '+esc(fmtDate((o.stageDates&&o.stageDates.ordered)||o.createdAt)):''}</div>
         </div>
       </div>
       <div class="stepper" data-ordstepper="${o.id}">${stepperHtml(ORDER_STAGES, stageIndex(o.status), o.stageDates, o.id)}</div>
@@ -1250,19 +1288,30 @@ function openOrderModal(id){
   renderTestsContainer();
   $('#orderOverlay').classList.add('open');
 }
-/* Stage dates are stored as locale date strings (what the cards display);
-   <input type=date> needs YYYY-MM-DD, so convert both ways. A string the
-   browser can't parse just shows as an empty picker rather than a wrong date. */
+/* Stored stage dates are already ISO, so both directions are near-identity; the
+   legacy branch exists only for values written before the ISO switch. */
+// Which order this browser's locale prints date fields in, learned from Intl
+// rather than assumed, so a legacy locale string is read the way it was written.
+const LOCALE_DATE_ORDER = (function(){
+  try{
+    return new Intl.DateTimeFormat().formatToParts(new Date(2020, 0, 2))
+      .filter(part=>part.type==='year'||part.type==='month'||part.type==='day')
+      .map(part=>part.type);
+  }catch(e){ return ['month','day','year']; }
+})();
 function toIsoDate(str){
   if(!str) return '';
-  const d = new Date(str);
-  if(isNaN(d)) return '';
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if(ISO_DATE_RE.test(str)) return str;
+  const nums = String(str).match(/\d+/g);
+  if(!nums || nums.length < 3 || LOCALE_DATE_ORDER.length < 3) return '';
+  const got = {};
+  LOCALE_DATE_ORDER.forEach((type, i)=>{ got[type] = +nums[i]; });
+  let y = got.year, mo = got.month, d = got.day;
+  if(y < 100) y += 2000;
+  if(!(y>=1000 && mo>=1 && mo<=12 && d>=1 && d<=31)) return '';
+  return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
 }
-function fromIsoDate(iso){
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso||'');
-  return m ? new Date(+m[1], +m[2]-1, +m[3]).toLocaleDateString() : '';
-}
+function fromIsoDate(iso){ return ISO_DATE_RE.test(iso||'') ? iso : ''; }
 function renderOrdStepperPreview(){
   const el = $('#ordStepper');
   const cur = stageIndex(ordEditStatus);
@@ -1276,7 +1325,7 @@ function renderOrdStepperPreview(){
   dl.innerHTML = ORDER_STAGES.slice(0, cur+1).map(st=>`<div><label>${esc(st.label)} date</label><input type="date" data-stagedate="${st.key}" value="${toIsoDate(ordStageDates[st.key])}"></div>`).join('');
   dl.querySelectorAll('[data-stagedate]').forEach(inp=>inp.onchange=()=>{
     const v = fromIsoDate(inp.value);
-    if(v) ordStageDates[inp.dataset.stagedate] = v; else delete ordStageDates[inp.dataset.stagedate];
+    ordStageDates[inp.dataset.stagedate] = v; // '' = deliberately cleared; advanceStageDates leaves it alone
     renderOrdStepperPreview();
   });
 }
@@ -1418,7 +1467,7 @@ $('#ordSave').onclick = ()=>{
   if(existing){
     Object.assign(existing, data, {stageDates, createdAt: stageDates.ordered || existing.createdAt});
   } else {
-    ordersDb.orders.push(Object.assign({id:uid(), createdAt: stageDates.ordered || new Date().toLocaleDateString(), stageDates}, data));
+    ordersDb.orders.push(Object.assign({id:uid(), createdAt: stageDates.ordered || todayIso(), stageDates}, data));
   }
   saveOrders(); $('#orderOverlay').classList.remove('open'); renderOrders();
 };
