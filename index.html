@@ -582,9 +582,17 @@ const idbStore = (function(){
     if(!p) p = new Promise((resolve, reject)=>{
       if(!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
       const req = indexedDB.open('vialhunter', 1);
+      // This promise is memoized in `p`, so it can never be retried: it MUST settle.
+      // onblocked fires instead of onsuccess/onerror when another connection holds
+      // the DB open across a version change, and some engines fire nothing at all,
+      // so a timeout backs both up. Rejecting lets the idbOk localStorage fallback in.
+      let timer = null;
+      const fail = msg=>{ clearTimeout(timer); reject(req.error || new Error(msg)); };
+      timer = setTimeout(()=>fail('IndexedDB open timed out'), 5000);
       req.onupgradeneeded = ()=>req.result.createObjectStore('kv');
-      req.onsuccess = ()=>resolve(req.result);
-      req.onerror = ()=>reject(req.error);
+      req.onsuccess = ()=>{ clearTimeout(timer); resolve(req.result); };
+      req.onerror = ()=>fail('IndexedDB open failed');
+      req.onblocked = ()=>fail('IndexedDB open blocked by another tab');
     });
     return p;
   }
@@ -603,41 +611,79 @@ const idbStore = (function(){
 })();
 let idbOk = true;
 let ordersWriteChain = Promise.resolve();
+function quotaMsg(){
+  return '⚠ Browser storage is full — '+(db.settings.supabaseEnabled
+    ? 'orders are still synced to Supabase, but this device\'s offline copy could not be updated.'
+    : 'remove some order photos/COAs/lab reports, or Export orders and clear old ones.');
+}
+// Fallback writer, used when IndexedDB is unavailable or has started failing.
+// Never throws: a storage failure must not take down a caller mid-edit, but it
+// always surfaces a toast, because silently not persisting is the worst outcome.
+function writeOrdersLocal(json){
+  try{ localStorage.setItem(ORDERS_KEY, json); return true; }
+  catch(e){
+    if(isQuotaError(e)) toastErr(quotaMsg());
+    else { console.error('Saving orders to localStorage failed', e); toastErr('⚠ Could not save orders to this browser\'s storage — changes may be lost when you reload. Export orders to keep a backup.'); }
+    return false;
+  }
+}
+/* Returns a promise for whether the orders were REALLY persisted. The write chain
+   only serializes writes, so it must never stay rejected (that would skip every
+   later write) — but callers that need to know the data landed (the one-time
+   localStorage migration) have to see the true outcome, not the swallowed one. */
 function saveOrders(){
-  if(!ordersLoaded) return; // never overwrite the stored copy with the empty pre-load placeholder
+  if(!ordersLoaded) return Promise.resolve(false); // never overwrite the stored copy with the empty pre-load placeholder
   scheduleSync();
   if(idbOk){
     // Snapshot now so later in-memory edits can't race the queued write
-    const snap = JSON.parse(JSON.stringify(ordersDb));
-    ordersWriteChain = ordersWriteChain.then(()=>idbStore.set(ORDERS_KEY, snap)).catch(e=>{
-      if(isQuotaError(e)) toastErr('⚠ Browser storage is full — '+(db.settings.supabaseEnabled ? 'orders are still synced to Supabase, but this device\'s offline copy could not be updated.' : 'remove some order photos/COAs/lab reports, or Export orders and clear old ones.'));
-      else console.error('Saving orders to IndexedDB failed', e);
+    const json = JSON.stringify(ordersDb);
+    const snap = JSON.parse(json);
+    const done = ordersWriteChain.then(()=>idbStore.set(ORDERS_KEY, snap)).then(()=>true, e=>{
+      if(isQuotaError(e)){ toastErr(quotaMsg()); return false; }
+      // Anything else (DB deleted by another tab, connection closed by a
+      // versionchange, storage eviction) is permanent for this connection:
+      // stop trusting IndexedDB and fall back to localStorage from here on.
+      console.error('Saving orders to IndexedDB failed, falling back to localStorage', e);
+      idbOk = false;
+      return writeOrdersLocal(json);
     });
-    return;
+    ordersWriteChain = done;
+    return done;
   }
-  try{ localStorage.setItem(ORDERS_KEY, JSON.stringify(ordersDb)); }
-  catch(e){ if(isQuotaError(e) && !db.settings.supabaseEnabled) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some order photos/COAs/lab reports, or Export orders as a backup and clear old ones.'); else if(!isQuotaError(e)) throw e; }
+  return Promise.resolve(writeOrdersLocal(JSON.stringify(ordersDb)));
 }
+/* ordersReady gates renderOrders, pushToSupabase and reconcileOnLoad, so it must
+   always RESOLVE — a rejection would silently kill the orders view and every sync
+   path at once. save() rethrows non-quota localStorage errors (Safari with cookies
+   blocked, for one), so the whole body is guarded. */
 const ordersReady = (async function loadOrders(){
-  let legacy = null;
-  try{ const d = JSON.parse(localStorage.getItem(ORDERS_KEY)); if(d && Array.isArray(d.orders)) legacy = d; }catch(e){}
-  let stored = null;
-  try{ stored = await idbStore.get(ORDERS_KEY); }
-  catch(e){ idbOk = false; console.warn('IndexedDB unavailable, falling back to localStorage for orders', e); }
-  ordersDb = (stored && Array.isArray(stored.orders)) ? stored : (legacy || {orders:[]});
-  ordersLoaded = true;
-  if(idbOk && legacy){
-    // One-time move out of localStorage; only drop the old copy once IndexedDB has it.
-    if(!stored) saveOrders();
-    ordersWriteChain.then(()=>{ try{ localStorage.removeItem(ORDERS_KEY); }catch(e){} });
+  try{
+    let legacy = null;
+    try{ const d = JSON.parse(localStorage.getItem(ORDERS_KEY)); if(d && Array.isArray(d.orders)) legacy = d; }catch(e){}
+    let stored = null;
+    try{ stored = await idbStore.get(ORDERS_KEY); }
+    catch(e){ idbOk = false; console.warn('IndexedDB unavailable, falling back to localStorage for orders', e); }
+    ordersDb = (stored && Array.isArray(stored.orders)) ? stored : (legacy || {orders:[]});
+    ordersLoaded = true;
+    if(idbOk && legacy){
+      // One-time move out of localStorage; only drop the old copy once IndexedDB
+      // really has it. saveOrders() resolves false on a failed write (e.g. the put
+      // aborts on quota), and dropping the old copy then would lose every order.
+      const written = stored ? Promise.resolve(true) : saveOrders();
+      written.then(ok=>{ if(ok){ try{ localStorage.removeItem(ORDERS_KEY); }catch(e){} } });
+    }
+    // One-time migration for anyone who had orders briefly stored inside the main db.
+    if(Array.isArray(db.orders)){
+      if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
+      delete db.orders; save();
+    }
+    migrateOrderPhotos();
+    migrateOrderTests();
+  }catch(e){
+    ordersLoaded = true;
+    console.error('Loading orders failed', e);
+    toastErr('⚠ Could not load saved orders in this browser. Check that site data/cookies are not blocked.');
   }
-  // One-time migration for anyone who had orders briefly stored inside the main db.
-  if(Array.isArray(db.orders)){
-    if(db.orders.length && !ordersDb.orders.length){ ordersDb.orders = db.orders; saveOrders(); }
-    delete db.orders; save();
-  }
-  migrateOrderPhotos();
-  migrateOrderTests();
 })();
 // One-time migration: single `photo` field -> `photos` array (multi-photo support).
 function migrateOrderPhotos(){
@@ -2073,8 +2119,8 @@ async function fetchRemoteRow(url, key){
 }
 async function pushToSupabase(silent){
   if(!db.settings.supabaseEnabled) return;
-  await ordersReady; // never push the empty pre-load placeholder over real remote orders
   try{
+    await ordersReady; // never push the empty pre-load placeholder over real remote orders
     const client = await getSbClient(db.settings.supabaseUrl, db.settings.supabaseKey);
     const nowIso = new Date().toISOString();
     logDiag('Pushing current data to Supabase…');
@@ -2253,13 +2299,14 @@ $('#sbQrHideBtn').onclick = hideQr;
 /* On load, reconcile once with Supabase (last-write-wins by timestamp) so opening
    the app on a second device picks up whatever the other device last synced. */
 (async function reconcileOnLoad(){
-  await ordersReady;
   // A QR-code pairing link looks like ?sb_url=...&sb_key=...; scrub it from the
-  // address bar immediately so the key doesn't linger in the visible URL/history.
+  // address bar FIRST — before any await — so the key doesn't linger in the
+  // visible URL/history for as long as the orders store takes to open.
   const params = new URLSearchParams(location.search);
   const qrUrl = params.get('sb_url'), qrKey = params.get('sb_key');
+  if(qrUrl && qrKey) history.replaceState(null, '', location.pathname + location.hash);
+  await ordersReady;
   if(qrUrl && qrKey){
-    history.replaceState(null, '', location.pathname + location.hash);
     updateSyncStatusUI();
     try{
       await attemptPairing(qrUrl, qrKey);
@@ -2283,7 +2330,7 @@ $('#sbQrHideBtn').onclick = hideQr;
     syncMeta.lastError = err.message||String(err); saveSyncMeta();
   }
   updateSyncStatusUI();
-})();
+})().catch(err=>console.error('Startup sync reconcile failed', err));
 
 /* ============ privacy blur ============ */
 function applyBlur(on){ document.body.classList.toggle('blur-on', !!on); }
@@ -2366,7 +2413,7 @@ setView(location.hash.replace('#',''));
 /* ============ init ============ */
 function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderCountryToggles(); renderResults(); renderCartCount(); }
 renderAll();
-ordersReady.then(renderOrders);
+ordersReady.then(renderOrders, e=>console.error('Orders failed to load', e));
 //JS-END
 </script>
 </body>
