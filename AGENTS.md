@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex when working with code in this repository.
+This file provides guidance to coding agents (Claude Code, Codex, and others) when working with code in this repository.
 
 ## What this is
 
@@ -41,6 +41,8 @@ Given the cart and the catalog, brute-forces every subset of warehouses (bitmask
 - **CSV/XLSX**: parsed client-side (PapaParse / SheetJS) into a 2-D grid, then `extractFromGrid` detects meta rows (Shipping/Minimum/Upload Date) and a header row (Code/Name/Specification/Price, tolerant of column order and naming) before falling back to positional guessing for headerless files.
 - **PDF/images**: `extractMedia` sends the file as a base64 document/image block directly to `api.anthropic.com/v1/messages` from the browser (`anthropic-dangerous-direct-browser-access` header), using the user's own API key from Settings. The prompt is specifically tuned for merged/spanning-cell vendor price tables (one product name spanning several dose/variant rows) — read it before changing extraction behavior, since it encodes hard-won constraints about not letting a merged cell's value bleed into adjacent rows.
 
+A PDF/image with several price columns (e.g. one per shipping origin) comes back as `priceLists` labels plus a per-row `prices` array; `openPriceLists` lets the user map each column to a warehouse (or skip it), and the chosen lists are reviewed one after another via `reviewQueue`.
+
 All ingestion paths converge on `openReview`/`gridToReview`, which show an editable review table before anything is written to `db`.
 
 ### Supabase sync (optional, off by default)
@@ -58,4 +60,4 @@ Three views (Vendors / Catalog / Orders) are one page toggled by `setView()`, wh
 - `esc()` is used pervasively for HTML-escaping user data before template-literal interpolation into `innerHTML` — never interpolate user-controlled strings (vendor names, item names, notes, etc.) without it.
 - `isQuotaError()` + a toast is the established pattern for localStorage `setItem` failures (photos/COAs can fill the ~5-10MB quota) — follow it for any new code that writes to localStorage directly.
 - To navigate the single file, grep its section banners rather than scrolling: `grep -n '============' index.html` prints the whole table of contents (state → Supabase sync → vendors → warehouses → orders → upload/parsing → PDF-image via Claude API → search/catalog → cart & optimizer → settings/export/import → privacy blur → theme → view switching → init).
-- `CLAUDE.md` is a near-verbatim mirror of this file for Claude Code. If you change guidance here, mirror it there (its only intended differences are the title and the tool name).
+- This file is the single source of agent guidance. `CLAUDE.md` contains only an `@AGENTS.md` import, which Claude Code expands inline — edit guidance here, not there.

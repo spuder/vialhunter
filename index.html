@@ -206,6 +206,8 @@ tr.gchild td:first-child{padding-left:32px}
 /* review table */
 #reviewTable td input{width:100%;padding:4px 6px;font-size:13px;border-radius:5px}
 #reviewTable td{padding:3px 4px}
+#plTable td{padding:8px 10px;vertical-align:middle}
+#plTable select{width:100%}
 
 /* cart */
 #cartOverlay .modal{max-width:900px}
@@ -418,6 +420,17 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <div class="mfoot">
     <button id="rvCancel">Cancel</button>
     <button class="primary" id="rvSave">Save price list</button>
+  </div>
+</div></div>
+
+<!-- Price-list chooser (a file with several price columns) -->
+<div class="overlay" id="plOverlay"><div class="modal wide">
+  <h3>Multiple price lists found <span class="hint" id="plMeta"></span></h3>
+  <p class="hint" style="margin-bottom:10px">This file has more than one price column. Choose which warehouse each one belongs to — each list you import gets its own review step before anything is saved.</p>
+  <table id="plTable"><thead><tr><th>Price list</th><th>Sample prices</th><th>Import into</th></tr></thead><tbody></tbody></table>
+  <div class="mfoot">
+    <button id="plCancel">Cancel</button>
+    <button class="primary" id="plNext">Review selected</button>
   </div>
 </div></div>
 
@@ -1548,20 +1561,25 @@ function extractFromGrid(grid){
 
 let pendingUpload = null; // {items, shipping, freeOver, minOrder, date}
 let pendingTarget = null; // {whId} or {vendorId}
+let reviewQueue = [];     // further reviews to open after this one saves (multi-price-list files)
 function gridToReview(grid, source, target){
   const ex = extractFromGrid(grid);
   if(!ex.items.length){ toastErr('No price rows found in '+source+' — expected columns like Code / Name / Specification / Price'); return; }
+  reviewQueue = [];
   openReview(ex, source, target);
 }
 
-function openReview(ex, source, target){
+/* `hint` is optional: {name, country} defaults for a NEW warehouse, and a `note`
+   appended to the modal title (which list of several this is). */
+function openReview(ex, source, target, hint){
+  hint = hint || {};
   pendingUpload = ex;
   pendingTarget = target;
   const wh = targetWh(target);
   const vendor = db.vendors.find(v=>v.id===(wh?wh.vendorId:target.vendorId));
-  $('#reviewMeta').textContent = `— ${ex.items.length} items from ${source} → ${vendor?vendor.name:'?'}`;
-  $('#rvWhName').value = wh ? wh.name : 'Warehouse '+(db.warehouses.filter(w=>w.vendorId===target.vendorId).length+1);
-  $('#rvCountry').value = wh&&wh.country?wh.country:'';
+  $('#reviewMeta').textContent = `— ${ex.items.length} items from ${source} → ${vendor?vendor.name:'?'}`+(hint.note?' · '+hint.note:'');
+  $('#rvWhName').value = wh ? wh.name : (hint.name || 'Warehouse '+(db.warehouses.filter(w=>w.vendorId===target.vendorId).length+1));
+  $('#rvCountry').value = wh&&wh.country?wh.country:(!wh&&hint.country?hint.country:'');
   $('#rvShip').value = ex.shipping!=null?ex.shipping:(wh&&wh.shippingCost!=null?wh.shippingCost:'');
   $('#rvFree').value = ex.freeOver!=null?ex.freeOver:(wh&&wh.freeShipOver!=null?wh.freeShipOver:'');
   $('#rvMin').value = ex.minOrder!=null?ex.minOrder:(wh&&wh.minOrder!=null?wh.minOrder:'');
@@ -1581,7 +1599,10 @@ function addReviewRow(it){
   $('#reviewTable tbody').appendChild(tr);
 }
 $('#rvAddRow').onclick = ()=>addReviewRow({code:'',name:'',spec:'',price:''});
-$('#rvCancel').onclick = ()=>$('#reviewOverlay').classList.remove('open');
+$('#rvCancel').onclick = ()=>{
+  $('#reviewOverlay').classList.remove('open');
+  if(reviewQueue.length){ toast(`Cancelled — ${reviewQueue.length} remaining price list${reviewQueue.length>1?'s':''} not imported`); reviewQueue = []; }
+};
 $('#rvSave').onclick = ()=>{
   const items = [...$('#reviewTable tbody').rows].map(tr=>{
     const g = f=>tr.querySelector(`[data-f=${f}]`).value.trim();
@@ -1606,6 +1627,74 @@ $('#rvSave').onclick = ()=>{
   save(); $('#reviewOverlay').classList.remove('open');
   toast(`Saved ${items.length} items to ${wh.name}`);
   renderAll();
+  const next = reviewQueue.shift();
+  if(next) openReview(next.ex, next.source, next.target, next.hint);
+};
+
+/* ---- files with several price lists ----
+   Some vendors print one table with a price column per shipping origin (e.g.
+   "China Shipping 25% Discount" next to "U.S. Warehouse 15% Discount"). Each
+   column is really a separate warehouse's price list, so the user maps every
+   column to a warehouse (or skips it) and the chosen ones are then reviewed and
+   saved one at a time through the normal review modal. */
+let pendingLists = null; // {lists:[{label, items}], meta, source, vendorId}
+function guessCountry(label){
+  if(/\b(u\.?s\.?a?|united states|america|domestic)\b/i.test(label)) return 'US';
+  if(/\b(china|chinese|cn|prc)\b/i.test(label)) return 'CN';
+  return '';
+}
+function openPriceLists(lists, meta, source, target){
+  const twh = targetWh(target);
+  const vendorId = twh ? twh.vendorId : target.vendorId;
+  const vendor = db.vendors.find(v=>v.id===vendorId);
+  const whs = db.warehouses.filter(w=>w.vendorId===vendorId);
+  pendingLists = {lists, meta, source, vendorId};
+  $('#plMeta').textContent = `— ${lists.length} in ${source} → ${vendor?vendor.name:'?'}`;
+  // Default destinations: an existing warehouse the label clearly names (same
+  // country, or its name appears in the label), else a new warehouse. A bare
+  // "Price"/"List price" column beside named ones is usually the undiscounted
+  // reference price, so it starts out skipped.
+  const taken = new Set();
+  const tb = $('#plTable tbody');
+  tb.innerHTML = '';
+  lists.forEach((l,i)=>{
+    const c = guessCountry(l.label), low = l.label.toLowerCase();
+    const match = whs.find(w=>!taken.has(w.id) && ((c && w.country===c) || (w.name && low.includes(w.name.toLowerCase()))));
+    let dest = 'new';
+    if(match){ dest = match.id; taken.add(match.id); }
+    else if(/^(list |retail |regular |original |base |unit )?price( \(?(usd|\$)\)?)?$/i.test(l.label.trim())) dest = 'skip';
+    const sample = l.items.slice(0,3).map(it=>`${it.code||it.name} $${it.price}`).join(' · ');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><b>${esc(l.label)}</b><div class="hint">${l.items.length} items</div></td>
+      <td class="hint">${esc(sample)}</td>
+      <td><select data-i="${i}">
+        <option value="skip">Skip — don't import</option>
+        ${whs.map(w=>`<option value="${esc(w.id)}">${esc(w.name||'Warehouse')}</option>`).join('')}
+        <option value="new">+ New warehouse</option>
+      </select></td>`;
+    tr.querySelector('select').value = dest;
+    tb.appendChild(tr);
+  });
+  $('#plOverlay').classList.add('open');
+}
+$('#plCancel').onclick = ()=>$('#plOverlay').classList.remove('open');
+$('#plNext').onclick = ()=>{
+  if(!pendingLists) return;
+  const {lists, meta, source, vendorId} = pendingLists;
+  const picks = [...$('#plTable tbody').querySelectorAll('select')].map(sel=>({l:lists[+sel.dataset.i], dest:sel.value})).filter(p=>p.dest!=='skip');
+  if(!picks.length){ toast('Pick a warehouse for at least one price list'); return; }
+  const existing = picks.filter(p=>p.dest!=='new').map(p=>p.dest);
+  if(new Set(existing).size!==existing.length){ toastErr('Two price lists point at the same warehouse — each list needs its own'); return; }
+  reviewQueue = picks.map((p,n)=>({
+    ex: Object.assign({}, meta, {items:p.l.items}),
+    source,
+    target: p.dest==='new' ? {vendorId} : {whId:p.dest},
+    hint: {name:p.l.label, country:guessCountry(p.l.label), note:`list ${n+1} of ${picks.length}: ${p.l.label}`}
+  }));
+  $('#plOverlay').classList.remove('open');
+  pendingLists = null;
+  const first = reviewQueue.shift();
+  openReview(first.ex, first.source, first.target, first.hint);
 };
 /* ============ PDF / image via Claude API ============ */
 async function extractMedia(file, mediaType, target){
@@ -1640,7 +1729,7 @@ async function extractMedia(file, mediaType, target){
         ...(tuned ? {output_config:{effort:'high'}, fallbacks:'default'} : {}),
         messages:[{role:'user', content:[
           mediaBlock,
-          {type:'text', text:'This is a vendor price list (mostly research peptides). These tables commonly use merged/spanning cells: one product-name cell spans several rows underneath it, each row being a different variant (dose, vial count, or pack size) with its own abbreviation/code, its own specification, and its own price. Treat every row as independent — its code, spec, and price must all come from that same row, read straight across. Never let a value from the merged product-name cell (which may itself mention a size, e.g. a name like "X(50mg)") stand in for or override a row\'s own spec column — the group label describes the product line, not necessarily that row\'s dose. Likewise never let a spec, code, or price bleed into an adjacent row — double check each row\'s values line up horizontally with that row before moving on. Extract every product/price row, one JSON item per row, in top-to-bottom table order. If a table has blank/divider rows between product groups, do not let them shift the row alignment. Respond with ONLY a MINIFIED JSON object on a single line — no markdown fences, no whitespace, no commentary — shaped as: {"shipping":number|null,"minOrder":number|null,"items":[{"code":string,"name":string,"spec":string,"price":number}]}. "spec" is that row\'s own size/dose, e.g. "5mg" or "10mg x 10 vials", read from that row\'s own spec cell only. Use null when a value is absent. Prices as plain numbers without currency symbols.'}
+          {type:'text', text:'This is a vendor price list (mostly research peptides). These tables commonly use merged/spanning cells: one product-name cell spans several rows underneath it, each row being a different variant (dose, vial count, or pack size) with its own abbreviation/code, its own specification, and its own price. Treat every row as independent — its code, spec, and price must all come from that same row, read straight across. Never let a value from the merged product-name cell (which may itself mention a size, e.g. a name like "X(50mg)") stand in for or override a row\'s own spec column — the group label describes the product line, not necessarily that row\'s dose. Likewise never let a spec, code, or price bleed into an adjacent row — double check each row\'s values line up horizontally with that row before moving on. Extract every product/price row, one JSON item per row, in top-to-bottom table order. If a table has blank/divider rows between product groups, do not let them shift the row alignment. Respond with ONLY a MINIFIED JSON object on a single line — no markdown fences, no whitespace, no commentary — shaped as: {"shipping":number|null,"minOrder":number|null,"priceLists":[string],"items":[{"code":string,"name":string,"spec":string,"prices":[number|null]}]}. "spec" is that row\'s own size/dose, e.g. "5mg" or "10mg x 10 vials", read from that row\'s own spec cell only. Some lists print several price columns side by side — typically one per shipping origin or warehouse, or a list price next to discounted prices (e.g. "Price", "China Shipping 25% Discount", "U.S. Warehouse 15% Discount"). "priceLists" holds the header label of every price column, left to right, exactly as printed (join a two-line header with a space); each item\'s "prices" holds that row\'s value for each of those columns in the same order and with the same length, null where the cell is blank. A table with one price column has exactly one entry in "priceLists" and one in each "prices". Only real table columns count — a discount mentioned in a banner or heading is not a price list, and never compute a price that is not printed. Use null when a value is absent. Prices as plain numbers without currency symbols.'}
         ]}]
       })
     });
@@ -1665,11 +1754,23 @@ async function extractMedia(file, mediaType, target){
       if(cut>0){ try{ parsed = JSON.parse(raw.slice(0, cut+1)+']}'); truncated = true; }catch(_){} }
       if(!parsed) throw new Error('Could not parse the model\'s reply ('+e.message+'). It began: “'+text.slice(0,160)+'…”');
     }
-    const items = (parsed.items||[]).map(it=>({code:it.code||'', name:it.name||'', spec:it.spec||'', price:parseNum(it.price)})).filter(it=>it.name&&it.price!=null);
-    if(!items.length) throw new Error('The model found no product/price rows in '+file.name);
-    if(truncated) toastErr('⚠ The reply was cut off — recovered '+items.length+' items, but the END of the price list may be missing. Double-check the bottom of the review table against the file.');
+    // One row per product, one price per price column ("price" is the older single-column shape).
+    const rows = (parsed.items||[]).map(it=>({code:it.code||'', name:it.name||'', spec:it.spec||'', prices:(Array.isArray(it.prices)?it.prices:[it.price]).map(parseNum)})).filter(it=>it.name);
+    const labels = Array.isArray(parsed.priceLists) ? parsed.priceLists : [];
+    const nCols = Math.max(labels.length, ...rows.map(r=>r.prices.length), 0);
+    const lists = [];
+    for(let c=0;c<nCols;c++){
+      const items = rows.filter(r=>r.prices[c]!=null).map(r=>({code:r.code, name:r.name, spec:r.spec, price:r.prices[c]}));
+      if(items.length) lists.push({label:String(labels[c]||'').trim() || 'Price list '+(c+1), items});
+    }
+    if(!lists.length) throw new Error('The model found no product/price rows in '+file.name);
+    const count = Math.max(...lists.map(l=>l.items.length));
+    if(truncated) toastErr('⚠ The reply was cut off — recovered '+count+' items, but the END of the price list may be missing. Double-check the bottom of the review table against the file.');
     else toastHide();
-    openReview({items, shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null}, file.name, target);
+    const meta = {shipping:parseNum(parsed.shipping), freeOver:null, minOrder:parseNum(parsed.minOrder), date:null};
+    reviewQueue = [];
+    if(lists.length>1) openPriceLists(lists, meta, file.name, target);
+    else openReview(Object.assign({}, meta, {items:lists[0].items}), file.name, target);
   }catch(err){
     console.error('Extraction error:', err);
     toastErr('Extraction failed — '+err.message);
