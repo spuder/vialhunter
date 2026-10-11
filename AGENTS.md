@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex when working with code in this repository.
+This file provides guidance to coding agents (Claude Code, Codex, and others) when working with code in this repository.
 
 ## What this is
 
@@ -60,4 +60,4 @@ Three views (Vendors / Catalog / Orders) are one page toggled by `setView()`, wh
 - `esc()` is used pervasively for HTML-escaping user data before template-literal interpolation into `innerHTML` — never interpolate user-controlled strings (vendor names, item names, notes, etc.) without it.
 - `isQuotaError()` + a toast is the established pattern for localStorage `setItem` failures (photos/COAs can fill the ~5-10MB quota) — follow it for any new code that writes to localStorage directly.
 - To navigate the single file, grep its section banners rather than scrolling: `grep -n '============' index.html` prints the whole table of contents (state → Supabase sync → vendors → warehouses → orders → upload/parsing → PDF-image via Claude API → search/catalog → cart & optimizer → settings/export/import → privacy blur → theme → view switching → init).
-- `CLAUDE.md` is a near-verbatim mirror of this file for Claude Code. If you change guidance here, mirror it there (its only intended differences are the title and the tool name).
+- This file is the single source of agent guidance. `CLAUDE.md` contains only an `@AGENTS.md` import, which Claude Code expands inline — edit guidance here, not there.
