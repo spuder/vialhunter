@@ -41,6 +41,8 @@ Given the cart and the catalog, brute-forces every subset of warehouses (bitmask
 - **CSV/XLSX**: parsed client-side (PapaParse / SheetJS) into a 2-D grid, then `extractFromGrid` detects meta rows (Shipping/Minimum/Upload Date) and a header row (Code/Name/Specification/Price, tolerant of column order and naming) before falling back to positional guessing for headerless files.
 - **PDF/images**: `extractMedia` sends the file as a base64 document/image block directly to `api.anthropic.com/v1/messages` from the browser (`anthropic-dangerous-direct-browser-access` header), using the user's own API key from Settings. The prompt is specifically tuned for merged/spanning-cell vendor price tables (one product name spanning several dose/variant rows) — read it before changing extraction behavior, since it encodes hard-won constraints about not letting a merged cell's value bleed into adjacent rows.
 
+A PDF/image with several price columns (e.g. one per shipping origin) comes back as `priceLists` labels plus a per-row `prices` array; `openPriceLists` lets the user map each column to a warehouse (or skip it), and the chosen lists are reviewed one after another via `reviewQueue`.
+
 All ingestion paths converge on `openReview`/`gridToReview`, which show an editable review table before anything is written to `db`.
 
 ### Supabase sync (optional, off by default)
