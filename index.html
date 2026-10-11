@@ -430,7 +430,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   </div></div>
   <div class="frow"><div>
     <label>Model</label>
-    <input id="setModel" placeholder="claude-sonnet-5">
+    <input id="setModel" placeholder="claude-opus-5-5">
   </div></div>
   <div class="frow"><div>
     <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" id="setBlur" style="width:auto"> 🙈 Blur sensitive data (names, WhatsApp numbers, tracking numbers, faces) — handy before sharing a screenshot</label>
@@ -531,7 +531,9 @@ create policy "anon full access" on vialhunter_sync
 /* ============ state ============ */
 const DBKEY = 'vialhunterDB_v1';
 const OLDKEY = 'peptideCompareDB_v1'; // pre-rename data, migrated on first load
-const SETTINGS_DEFAULTS = {apiKey:'', model:'claude-sonnet-5', blurSensitive:false, supabaseUrl:'', supabaseKey:'', supabaseEnabled:false};
+const DEFAULT_MODEL = 'claude-opus-5-5';
+const LEGACY_DEFAULT_MODELS = ['claude-sonnet-5']; // earlier defaults, upgraded in place by load()
+const SETTINGS_DEFAULTS = {apiKey:'', model:DEFAULT_MODEL, blurSensitive:false, supabaseUrl:'', supabaseKey:'', supabaseEnabled:false};
 let db = load();
 
 /* ============ Supabase sync (optional) ============
@@ -550,9 +552,16 @@ function scheduleSync(){
   syncTimer = setTimeout(()=>{ pushToSupabase(true); }, 2000);
 }
 
+/* The default model used to be saved into settings verbatim, so a browser that
+   has ever hit Save in Settings is pinned to the old default. Move those along;
+   a model the user typed in themselves is left alone. */
+function migrateDefaultModel(d){
+  if(LEGACY_DEFAULT_MODELS.includes(d.settings.model)) d.settings.model = DEFAULT_MODEL;
+  return d;
+}
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors){ d.settings = Object.assign({}, SETTINGS_DEFAULTS, d.settings); return d; } }catch(e){}
-  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ d.settings = Object.assign({}, SETTINGS_DEFAULTS, d.settings); localStorage.setItem(DBKEY, JSON.stringify(d)); return d; } }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(DBKEY)); if(d && d.vendors){ d.settings = Object.assign({}, SETTINGS_DEFAULTS, d.settings); return migrateDefaultModel(d); } }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(OLDKEY)); if(d && d.vendors){ d.settings = Object.assign({}, SETTINGS_DEFAULTS, d.settings); localStorage.setItem(DBKEY, JSON.stringify(d)); return migrateDefaultModel(d); } }catch(e){}
   return {vendors:[], warehouses:[], cart:[], settings:Object.assign({}, SETTINGS_DEFAULTS)};
 }
 /* localStorage is capped (usually 5-10MB per origin) — once photos/COAs/lab
@@ -1608,17 +1617,27 @@ async function extractMedia(file, mediaType, target){
     const mediaBlock = mediaType==='application/pdf'
       ? {type:'document', source:{type:'base64', media_type:'application/pdf', data:b64}}
       : {type:'image', source:{type:'base64', media_type:mediaType, data:b64}};
+    const model = db.settings.model || DEFAULT_MODEL;
+    const headers = {
+      'content-type':'application/json',
+      'x-api-key': key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    };
+    // Tuning that only the default model is known to accept — a custom model from
+    // Settings gets the plain request. Effort: Opus 5.5 defaults to medium, and
+    // reading a dense price table row-by-row is worth high. Fallbacks: if a safety
+    // classifier declines the file (peptide lists can trip it), the API re-runs
+    // the request on another model instead of handing back the refusal.
+    const tuned = model===DEFAULT_MODEL;
+    if(tuned) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
-      headers:{
-        'content-type':'application/json',
-        'x-api-key': key,
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
+      headers,
       body: JSON.stringify({
-        model: db.settings.model || 'claude-sonnet-5',
+        model,
         max_tokens: 32000,
+        ...(tuned ? {output_config:{effort:'high'}, fallbacks:'default'} : {}),
         messages:[{role:'user', content:[
           mediaBlock,
           {type:'text', text:'This is a vendor price list (mostly research peptides). These tables commonly use merged/spanning cells: one product-name cell spans several rows underneath it, each row being a different variant (dose, vial count, or pack size) with its own abbreviation/code, its own specification, and its own price. Treat every row as independent — its code, spec, and price must all come from that same row, read straight across. Never let a value from the merged product-name cell (which may itself mention a size, e.g. a name like "X(50mg)") stand in for or override a row\'s own spec column — the group label describes the product line, not necessarily that row\'s dose. Likewise never let a spec, code, or price bleed into an adjacent row — double check each row\'s values line up horizontally with that row before moving on. Extract every product/price row, one JSON item per row, in top-to-bottom table order. If a table has blank/divider rows between product groups, do not let them shift the row alignment. Respond with ONLY a MINIFIED JSON object on a single line — no markdown fences, no whitespace, no commentary — shaped as: {"shipping":number|null,"minOrder":number|null,"items":[{"code":string,"name":string,"spec":string,"price":number}]}. "spec" is that row\'s own size/dose, e.g. "5mg" or "10mg x 10 vials", read from that row\'s own spec cell only. Use null when a value is absent. Prices as plain numbers without currency symbols.'}
@@ -1632,6 +1651,7 @@ async function extractMedia(file, mediaType, target){
       throw new Error('API returned '+resp.status+' — '+detail+(resp.status===404?' (check the model name in ⚙ Settings)':resp.status===401?' (check your API key in ⚙ Settings)':''));
     }
     const data = await resp.json();
+    if(data.stop_reason==='refusal') throw new Error('The model declined to read this file'+(data.stop_details&&data.stop_details.category?' ('+data.stop_details.category+' safety filter)':'')+'. Try a different model in ⚙ Settings, or convert the list to CSV/XLSX.');
     let text = (data.content||[]).map(b=>b.text||'').join('');
     text = text.replace(/^```(json)?/m,'').replace(/```\s*$/m,'').trim();
     const start = text.indexOf('{');
@@ -2045,14 +2065,14 @@ $('#cartClear').onclick = ()=>{ if(confirm('Clear cart?')){ db.cart=[]; save(); 
 
 /* ============ settings / export / import ============ */
 $('#settingsBtn').onclick = ()=>{
-  $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||'claude-sonnet-5'; $('#setBlur').checked=!!db.settings.blurSensitive;
+  $('#setKey').value=db.settings.apiKey||''; $('#setModel').value=db.settings.model||DEFAULT_MODEL; $('#setBlur').checked=!!db.settings.blurSensitive;
   $('#setSbUrl').value=db.settings.supabaseUrl||''; $('#setSbKey').value=db.settings.supabaseKey||'';
   updateSyncStatusUI();
   hideQr(); $('#sbQrDetails').open = false;
   $('#setOverlay').classList.add('open');
 };
 $('#setCancel').onclick = ()=>$('#setOverlay').classList.remove('open');
-$('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||'claude-sonnet-5'; db.settings.blurSensitive=$('#setBlur').checked; save(); applyBlur(db.settings.blurSensitive); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
+$('#setSave').onclick = ()=>{ db.settings.apiKey=$('#setKey').value.trim(); db.settings.model=$('#setModel').value.trim()||DEFAULT_MODEL; db.settings.blurSensitive=$('#setBlur').checked; save(); applyBlur(db.settings.blurSensitive); $('#setOverlay').classList.remove('open'); toast('Settings saved'); };
 
 /* ---- Supabase sync: connect / pair / disconnect ---- */
 /* Diagnostics log shown right in the Settings dialog (not a toast, which can be
@@ -2140,6 +2160,7 @@ function applyRemoteSnapshot(remote){
   suppressSync = true;
   db.vendors = remote.vendors||[]; db.warehouses = remote.warehouses||[]; db.cart = remote.cart||[];
   db.settings = Object.assign({}, SETTINGS_DEFAULTS, remote.settings||{}, keep);
+  migrateDefaultModel(db);
   ordersDb.orders = remote.orders||[];
   save(); saveOrders();
   suppressSync = false;
@@ -2346,7 +2367,7 @@ function exportPayload(){
   const clean = {
     app: 'vialhunter', exported: new Date().toISOString(),
     vendors: db.vendors, warehouses: db.warehouses, cart: db.cart,
-    settings: { model: (db.settings && db.settings.model) || 'claude-sonnet-5' }
+    settings: { model: (db.settings && db.settings.model) || DEFAULT_MODEL }
   };
   const json = JSON.stringify(clean, null, 2);
   const key = db.settings && db.settings.apiKey;
@@ -2369,7 +2390,7 @@ $('#importFile').onchange = e=>{
       if(d.settings){ delete d.settings.apiKey; delete d.settings.supabaseUrl; delete d.settings.supabaseKey; delete d.settings.supabaseEnabled; } // never accept credentials from a shared file
       delete d.orders; // vendor imports never touch personal order data
       const keep = {apiKey: db.settings.apiKey, supabaseUrl: db.settings.supabaseUrl, supabaseKey: db.settings.supabaseKey, supabaseEnabled: db.settings.supabaseEnabled};
-      db = d; db.settings = Object.assign({}, SETTINGS_DEFAULTS, db.settings, keep); db.cart = db.cart||[];
+      db = d; db.settings = Object.assign({}, SETTINGS_DEFAULTS, db.settings, keep); migrateDefaultModel(db); db.cart = db.cart||[];
       save(); renderAll(); toast('Imported '+d.vendors.length+' vendors');
     }catch(err){ toastErr('Import failed: '+err.message); }
   });
