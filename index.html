@@ -15,6 +15,7 @@
   --text:#e8ebef; --muted:#8b94a1; --accent:#e0b24e; --accent2:#f0c869;
   --best:#4fd6a0; --bestbg:rgba(79,214,160,.12); --danger:#f0776a;
   --link:#6cb6e8;
+  --stocklocal:#4fd6a0; --stockwh:#6cb6e8; --stockback:#f0a35e;
   --headbg:rgba(20,22,26,.92); --inputbg:#0f1114; --onaccent:#1a1408; --pinbg:rgba(224,178,78,.20);
 }
 :root[data-theme="light"]{
@@ -23,6 +24,7 @@
   --text:#2c261e; --muted:#8a7c67; --accent:#c2410c; --accent2:#e2650f;
   --best:#15803d; --bestbg:rgba(21,128,61,.10); --danger:#b91c1c;
   --link:#1d5fb8;
+  --stocklocal:#15803d; --stockwh:#1d5fb8; --stockback:#c2410c;
   --headbg:rgba(243,237,227,.9); --inputbg:#ffffff; --onaccent:#fff7f2; --pinbg:rgba(194,65,12,.12);
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -138,10 +140,25 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .qline{display:grid;grid-template-columns:minmax(0,1fr) 64px 56px 78px 70px 26px;gap:6px;align-items:center;margin-bottom:5px}
 .qline input{padding:5px 7px;font-size:13px;border-radius:6px;min-width:0;width:100%}
 .qline .qlt{text-align:right;font-size:13px;font-weight:600;white-space:nowrap}
+.qline .qpct{display:block;margin-top:9px;font-size:11.5px;font-weight:400;color:var(--muted)}
 .qline.qlabels{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px}
 .qline.qlabels span:nth-child(5){text-align:right}
 .qrm{background:transparent;border:none;color:var(--muted);padding:0;font-size:13px}
 .qrm:hover{color:var(--danger)}
+.qsecopts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.qsecopts label{display:flex;align-items:center;gap:5px;font-size:12px;border:1px solid var(--border);border-radius:7px;padding:3px 8px;cursor:pointer;user-select:none}
+.qsecopts input{width:auto;margin:0}
+.qsecopts .local{border-color:var(--stocklocal);color:var(--stocklocal)} .qsecopts .local input{accent-color:var(--stocklocal)}
+.qsecopts .warehouse{border-color:var(--stockwh);color:var(--stockwh)} .qsecopts .warehouse input{accent-color:var(--stockwh)}
+.qsecopts .backorder{border-color:var(--stockback);color:var(--stockback)} .qsecopts .backorder input{accent-color:var(--stockback)}
+.qsecopts .qsale{margin-left:auto;border-color:var(--best);color:var(--best)} .qsecopts .qsale input{accent-color:var(--best)}
+.qprice{display:flex;flex-direction:column;gap:3px}
+.qprice input[data-f="reg"]{font-size:11.5px;padding:3px 7px}
+.stockbadge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border:1px solid currentColor;border-radius:6px;padding:2px 7px;white-space:nowrap;vertical-align:middle}
+.stockbadge.local{color:var(--stocklocal)}
+.stockbadge.warehouse{color:var(--stockwh)}
+.stockbadge.backorder{color:var(--stockback)}
+.salebadge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:2px 7px;background:var(--bestbg);color:var(--best);vertical-align:middle}
 .qsecfoot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:13px;color:var(--muted)}
 .qsecfoot b{color:var(--text)}
 .qfoot{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;align-items:center}
@@ -153,7 +170,11 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .cq .cqsub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:22px}
 .cqsec{margin-bottom:22px}
 .cqbox{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--panel)}
-.cqbox .cqtitle{background:var(--panel2);color:var(--link);font-weight:700;font-size:18px;padding:13px 18px}
+.cqbox .cqtitle{background:var(--panel2);color:var(--link);font-weight:700;font-size:18px;padding:13px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cqtitle .cqbadges{margin-left:auto;display:flex;gap:6px}
+.cqrow .pv s{margin-right:6px;opacity:.8}
+.cqrow .pv .sp{color:var(--best);font-weight:600}
+.cqtot .save{color:var(--best);font-weight:600}
 .cqrow{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 0.8fr;gap:10px;padding:13px 18px;border-top:1px solid var(--border);align-items:baseline}
 .cqrow .nm{font-weight:600}
 .cqrow .nm small{color:var(--muted);font-weight:400;margin-left:6px}
@@ -1526,11 +1547,24 @@ $('#ordersImportFile').onchange = e=>{
    along in a shared vendor Export, and they aren't synced. They hold no
    photos, so plain localStorage is plenty (no IndexedDB needed).
    Shape: {quotes:[{id, client, notes, created, sections:[{id, title, weeks,
-   lines:[{id, name, mg, qty, price}]}]}]}. A section is one protocol/option
+   sale, stock, lines:[{id, name, mg, qty, price, reg}]}]}]}.
+   `stock` is where the option ships from (STOCK_STATUSES key or '');
+   with `sale` on, each line's `price` is the sale price and `reg` its
+   optional regular price, shown struck through on the customer view. A section is one protocol/option
    the client can choose between, with its own length in weeks (Reta may run
    4 weeks while Tesa/Ipa runs 12); its blank title falls back to its peptide
    names joined with " + ". */
 const QUOTESKEY = 'vialhunterQuotesDB_v1';
+// Per-option availability; each gets its own theme color via the --stock* variables.
+const STOCK_STATUSES = [
+  {key:'local', label:'In stock locally', short:'Local'},
+  {key:'warehouse', label:'In stock at warehouse', short:'Warehouse'},
+  {key:'backorder', label:'Backordered', short:'Backordered'}
+];
+function stockBadgeHtml(key){
+  const st = STOCK_STATUSES.find(x=>x.key===key);
+  return st ? `<span class="stockbadge ${st.key}">${esc(st.label)}</span>` : '';
+}
 let quotesDb = (function(){
   try{ const d = JSON.parse(localStorage.getItem(QUOTESKEY)); if(d && Array.isArray(d.quotes)) return d; }catch(e){}
   return {quotes:[]};
@@ -1545,8 +1579,8 @@ let quotesDb = (function(){
   const arr = v => Array.isArray(v) ? v : [];
   quotesDb.quotes = quotesDb.quotes.filter(q=>q && typeof q==='object').map(q=>{
     const sections = arr(q.sections).filter(x=>x && typeof x==='object').map(sec=>{
-      const lines = arr(sec.lines).filter(x=>x && typeof x==='object').map(l=>({id:str(l.id)||uid(), name:str(l.name), mg:str(l.mg), qty:str(l.qty), price:str(l.price)}));
-      return {id:str(sec.id)||uid(), title:str(sec.title), weeks:'weeks' in sec ? sec.weeks : ('weeks' in q ? q.weeks : 12), lines:lines.length?lines:[newQuoteLine()]};
+      const lines = arr(sec.lines).filter(x=>x && typeof x==='object').map(l=>({id:str(l.id)||uid(), name:str(l.name), mg:str(l.mg), qty:str(l.qty), price:str(l.price), reg:str(l.reg)}));
+      return {id:str(sec.id)||uid(), title:str(sec.title), weeks:'weeks' in sec ? sec.weeks : ('weeks' in q ? q.weeks : 12), sale:!!sec.sale, stock:STOCK_STATUSES.some(x=>x.key===sec.stock)?sec.stock:'', lines:lines.length?lines:[newQuoteLine()]};
     });
     return {id:str(q.id)||uid(), client:str(q.client), notes:str(q.notes), created:str(q.created), sections:sections.length?sections:[newQuoteSection()]};
   });
@@ -1556,12 +1590,23 @@ function saveQuotes(){
   try{ localStorage.setItem(QUOTESKEY, JSON.stringify(quotesDb)); }
   catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some vendor/contact photos, or Export a backup and clear old data.'); else throw e; }
 }
-function newQuoteLine(){ return {id:uid(), name:'', mg:'', qty:'', price:''}; }
-function newQuoteSection(weeks){ return {id:uid(), title:'', weeks:weeks||12, lines:[newQuoteLine()]}; }
+function newQuoteLine(){ return {id:uid(), name:'', mg:'', qty:'', price:'', reg:''}; }
+function newQuoteSection(weeks){ return {id:uid(), title:'', weeks:weeks||12, sale:false, stock:'', lines:[newQuoteLine()]}; }
 function newQuote(){ return {id:uid(), client:'', notes:'', created:new Date().toLocaleDateString(), sections:[newQuoteSection()]}; }
 function findQuote(id){ return quotesDb.quotes.find(q=>q.id===id); }
 function qLineTotal(l){ return (+l.qty||0) * (+l.price||0); }
 function qSecTotal(s){ return s.lines.reduce((a,l)=>a+qLineTotal(l), 0); }
+// A line counts as discounted only when the option is marked on sale and its regular price is actually higher.
+function qLineReg(s, l){ return s.sale && +l.reg > (+l.price||0) ? +l.reg : null; }
+// Percent off regular, rounded; null when the line isn't actually discounted.
+function qLinePctOff(s, l){ const r = qLineReg(s, l); return r!=null ? Math.round((1-(+l.price||0)/r)*100) : null; }
+// Editor total cell: the line total, plus (on a sale option) a grey "% off" level with the reg. input.
+function qLineTotalHtml(s, l){
+  if(!s.sale) return qMoney(qLineTotal(l));
+  const pct = qLinePctOff(s, l);
+  return qMoney(qLineTotal(l)) + `<span class="qpct">${pct!=null?'−'+pct+'% off':'&nbsp;'}</span>`;
+}
+function qSecSaved(s){ return s.lines.reduce((a,l)=>{ const r = qLineReg(s, l); return a + (r!=null ? (r-(+l.price||0))*(+l.qty||0) : 0); }, 0); }
 // Weeks → months at 4 weeks/month, matching how clients think about a "12-week = 3-month" protocol.
 // Under 4 weeks a "monthly" figure would exceed the whole protocol's cost, so none is shown.
 function qWeeks(s){ return +s.weeks>0 ? +s.weeks : null; }
@@ -1597,14 +1642,18 @@ function renderQuotes(){
             <input class="qweeks" data-f="weeks" type="number" min="1" value="${esc(s.weeks)}" title="Length of this protocol (weeks)"><span class="hint">wks</span>
             <button class="small danger" data-act="rmsec" title="Remove this option">✕</button>
           </div>
-          <div class="qline qlabels"><span>Peptide</span><span>mg</span><span>Qty</span><span>$/vial</span><span>Total</span><span></span></div>
+          <div class="qsecopts">
+            ${STOCK_STATUSES.map(st=>`<label class="${st.key}" title="${esc(st.label)}"><input type="checkbox" data-act="stock" data-stock="${st.key}"${s.stock===st.key?' checked':''}> ${esc(st.short)}</label>`).join('')}
+            <label class="qsale" title="Price this option as a sale — enter each vial's regular price under its sale price"><input type="checkbox" data-act="sale"${s.sale?' checked':''}> 🏷 Sale</label>
+          </div>
+          <div class="qline qlabels"><span>Peptide</span><span>mg</span><span>Qty</span><span>${s.sale?'Sale / reg':'$/vial'}</span><span>Total</span><span></span></div>
           ${s.lines.map(l=>`
             <div class="qline" data-line="${l.id}">
               <input data-f="name" list="quotePeptideNames" value="${esc(l.name)}" placeholder="Peptide">
               <input data-f="mg" value="${esc(l.mg)}" placeholder="10">
               <input data-f="qty" type="number" min="0" value="${esc(l.qty)}" placeholder="1">
-              <input data-f="price" type="number" min="0" step="0.01" value="${esc(l.price)}" placeholder="0">
-              <span class="qlt" data-out="line">${qMoney(qLineTotal(l))}</span>
+              ${s.sale?`<div class="qprice"><input data-f="price" type="number" min="0" step="0.01" value="${esc(l.price)}" placeholder="sale" title="Sale price per vial"><input data-f="reg" type="number" min="0" step="0.01" value="${esc(l.reg)}" placeholder="reg." title="Regular price per vial (shown struck through)"></div>`:`<input data-f="price" type="number" min="0" step="0.01" value="${esc(l.price)}" placeholder="0">`}
+              <span class="qlt" data-out="line">${qLineTotalHtml(s, l)}</span>
               <button class="qrm" data-act="rmline" title="Remove line">✕</button>
             </div>`).join('')}
           <div class="qsecfoot">
@@ -1633,9 +1682,10 @@ function updateQuoteTotals(card){
   const q = findQuote(card.dataset.quote); if(!q) return;
   q.sections.forEach(s=>{
     const se = card.querySelector(`[data-sec="${s.id}"]`); if(!se) return;
-    s.lines.forEach(l=>{ const o = se.querySelector(`[data-line="${l.id}"] [data-out="line"]`); if(o) o.textContent = qMoney(qLineTotal(l)); });
+    s.lines.forEach(l=>{ const o = se.querySelector(`[data-line="${l.id}"] [data-out="line"]`); if(o) o.innerHTML = qLineTotalHtml(s, l); });
     const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
-    se.querySelector('[data-out="sec"]').innerHTML = `${mo!=null?`Monthly <b>${qMoneyWhole(mo)}</b> · `:''}${wk?wk+'-wk ':''}Total <b>${qMoney(t)}</b>`;
+    const sv = qSecSaved(s);
+    se.querySelector('[data-out="sec"]').innerHTML = `${mo!=null?`Monthly <b>${qMoneyWhole(mo)}</b> · `:''}${wk?wk+'-wk ':''}Total <b>${qMoney(t)}</b>${sv>0?` · <span style="color:var(--best)">saves ${qMoney(sv)}</span>`:''}`;
     const ti = se.querySelector('[data-f="title"]'); if(!s.title) ti.placeholder = qSecTitle(s)==='Option' ? 'Protocol name, e.g. Tesamorelin + Ipamorelin' : qSecTitle(s);
   });
   const n = q.sections.length;
@@ -1656,7 +1706,10 @@ $('#quoteGrid').addEventListener('click', e=>{
   const secEl = btn.closest('[data-sec]'), s = secEl && q.sections.find(x=>x.id===secEl.dataset.sec);
   const act = btn.dataset.act;
   if(act==='preview') return openQuoteView(q);
-  if(act==='addline'){ s.lines.push(newQuoteLine()); }
+  // Stock checkboxes behave as a clearable one-of-three: ticking one unticks the others.
+  if(act==='stock'){ s.stock = btn.checked ? btn.dataset.stock : ''; }
+  else if(act==='sale'){ s.sale = btn.checked; }
+  else if(act==='addline'){ s.lines.push(newQuoteLine()); }
   else if(act==='rmline'){ s.lines = s.lines.filter(l=>l.id!==btn.closest('[data-line]').dataset.line); if(!s.lines.length) s.lines.push(newQuoteLine()); }
   else if(act==='addsec'){ const last = q.sections[q.sections.length-1]; q.sections.push(newQuoteSection(last && qWeeks(last))); }
   else if(act==='rmsec'){ if(qLinesFilled(s).length && !confirm('Remove “'+qSecTitle(s)+'” from this quote?')) return; q.sections = q.sections.filter(x=>x!==s); if(!q.sections.length) q.sections.push(newQuoteSection()); }
@@ -1679,15 +1732,15 @@ function openQuoteView(q){
       const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
       return `<div class="cqsec">
         <div class="cqbox">
-          <div class="cqtitle">${esc(qSecTitle(s, lines))}</div>
+          <div class="cqtitle">${esc(qSecTitle(s, lines))}${s.stock||qSecSaved(s)>0?`<span class="cqbadges">${qSecSaved(s)>0?'<span class="salebadge">Sale</span>':''}${stockBadgeHtml(s.stock)}</span>`:''}</div>
           ${lines.map(l=>{ const n=+l.qty||0; return `<div class="cqrow">
             <span class="nm">${esc(l.name||'—')}${qMg(l.mg)?`<small>${esc(qMg(l.mg))}</small>`:''}</span>
             <span class="vi">${n} vial${n===1?'':'s'}</span>
-            <span class="pv">${qMoney(+l.price||0)} / vial</span>
+            <span class="pv">${qLineReg(s, l)!=null?`<s>${qMoney(qLineReg(s, l))}</s><span class="sp">${qMoney(+l.price||0)}</span>`:qMoney(+l.price||0)} / vial</span>
             <span class="lt">${qMoney(qLineTotal(l))}</span>
           </div>`; }).join('')}
         </div>
-        <div class="cqtot">${mo!=null?`<span>Monthly<span class="mo">${qMoneyWhole(mo)}</span></span>`:''}<span>${wk?wk+'-week ':''}total: <b>${qMoney(t)}</b></span></div>
+        <div class="cqtot">${mo!=null?`<span>Monthly<span class="mo">${qMoneyWhole(mo)}</span></span>`:''}<span>${wk?wk+'-week ':''}total: <b>${qMoney(t)}</b></span>${qSecSaved(s)>0?`<span class="save">You save ${qMoney(qSecSaved(s))}</span>`:''}</div>
       </div>`; }).join('')}
     ${q.notes.trim()?`<div class="cqnotes">${esc(q.notes.trim())}</div>`:''}`;
   $('#quoteViewOverlay').classList.add('open');
@@ -1698,9 +1751,10 @@ function quoteText(q){
   q.sections.forEach(s=>{
     const lines = qLinesShown(s); if(!lines.length) return;
     const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
-    out.push('', qSecTitle(s, lines));
-    lines.forEach(l=>{ const n=+l.qty||0; out.push(`• ${l.name}${qMg(l.mg)?' '+qMg(l.mg):''} — ${n} vial${n===1?'':'s'} × ${qMoney(+l.price||0)} = ${qMoney(qLineTotal(l))}`); });
-    out.push((mo!=null?'Monthly '+qMoneyWhole(mo)+' · ':'')+(wk?wk+'-week ':'')+'total '+qMoney(t));
+    const st = STOCK_STATUSES.find(x=>x.key===s.stock), sv = qSecSaved(s);
+    out.push('', qSecTitle(s, lines)+(sv>0?' [SALE]':'')+(st?' ['+st.label+']':''));
+    lines.forEach(l=>{ const n=+l.qty||0, r=qLineReg(s, l); out.push(`• ${l.name}${qMg(l.mg)?' '+qMg(l.mg):''} — ${n} vial${n===1?'':'s'} × ${qMoney(+l.price||0)}${r!=null?' (reg. '+qMoney(r)+')':''} = ${qMoney(qLineTotal(l))}`); });
+    out.push((mo!=null?'Monthly '+qMoneyWhole(mo)+' · ':'')+(wk?wk+'-week ':'')+'total '+qMoney(t)+(sv>0?' · you save '+qMoney(sv):''));
   });
   if(q.notes.trim()) out.push('', q.notes.trim());
   return out.join('\n');
