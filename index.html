@@ -1584,7 +1584,7 @@ function renderQuotes(){
   $('#quotePeptideNames').innerHTML = [...names].sort().map(n=>`<option value="${esc(n)}">`).join('');
 
   const g = $('#quoteGrid');
-  g.innerHTML = quotesDb.quotes.slice().reverse().map(q=>`
+  g.innerHTML = quotesDb.quotes.map(q=>`
     <div class="qcard" data-quote="${q.id}">
       <button class="qpreview primary" data-act="preview" title="Customer-friendly view">✨</button>
       <div class="qhead">
@@ -1623,7 +1623,7 @@ function renderQuotes(){
   const add = document.createElement('div');
   add.className = 'addcard';
   add.innerHTML = '<div class="big">＋</div><div>New quote</div>';
-  add.onclick = ()=>{ quotesDb.quotes.push(newQuote()); saveQuotes(); renderQuotes(); const i=$('#quoteGrid .qclient'); if(i) i.focus(); };
+  add.onclick = ()=>{ quotesDb.quotes.push(newQuote()); saveQuotes(); renderQuotes(); const ins=document.querySelectorAll('#quoteGrid .qclient'); const i=ins[ins.length-1]; if(i){ i.focus(); i.scrollIntoView({block:'center', behavior:'smooth'}); } };
   g.appendChild(add);
   g.querySelectorAll('.qcard').forEach(updateQuoteTotals);
 }
