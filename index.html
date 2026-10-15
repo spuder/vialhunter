@@ -174,7 +174,6 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .cqtitle .cqbadges{margin-left:auto;display:flex;gap:6px}
 .cqrow .pv s{margin-right:6px;opacity:.8}
 .cqrow .pv .sp{color:var(--best);font-weight:600}
-.cqtot .save{color:var(--best);font-weight:600}
 .cqrow{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 0.8fr;gap:10px;padding:13px 18px;border-top:1px solid var(--border);align-items:baseline}
 .cqrow .nm{font-weight:600}
 .cqrow .nm small{color:var(--muted);font-weight:400;margin-left:6px}
@@ -1745,7 +1744,7 @@ function openQuoteView(q){
             <span class="lt">${qMoney(qLineTotal(l))}</span>
           </div>`; }).join('')}
         </div>
-        <div class="cqtot">${mo!=null?`<span>Monthly<span class="mo">${qMoneyWhole(mo)}</span></span>`:''}<span>${wk?wk+'-week ':''}total: <b>${qMoney(t)}</b></span>${qSecSaved(s)>0?`<span class="save">You save ${qMoney(qSecSaved(s))}</span>`:''}</div>
+        <div class="cqtot">${mo!=null?`<span>Monthly<span class="mo">${qMoneyWhole(mo)}</span></span>`:''}<span>${wk?wk+'-week ':''}total: <b>${qMoney(t)}</b></span></div>
       </div>`; }).join('')}
     ${q.notes.trim()?`<div class="cqnotes">${esc(q.notes.trim())}</div>`:''}`;
   $('#quoteViewOverlay').classList.add('open');
