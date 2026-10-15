@@ -125,6 +125,54 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .ordsection .slabel{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .ordcontents{white-space:pre-wrap;font-size:13px;color:var(--text);background:var(--panel2);border-radius:8px;padding:6px 10px}
 
+/* quotes — editable draft cards + customer-facing preview */
+#quoteGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px}
+.qcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;position:relative}
+.qhead{display:flex;gap:8px;align-items:center;padding-right:40px}
+.qhead .qclient{flex:1;min-width:0;font-weight:700;font-size:16px}
+.qsechead .qweeks{flex:0 0 58px;width:58px;text-align:center;font-weight:400;color:var(--text)}
+.qpreview{position:absolute;top:10px;right:10px;width:34px;height:34px;padding:0;border-radius:10px;font-size:17px;display:flex;align-items:center;justify-content:center}
+.qsec{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px}
+.qsechead{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.qsechead input{flex:1;min-width:0;font-weight:600;color:var(--link)}
+.qline{display:grid;grid-template-columns:minmax(0,1fr) 64px 56px 78px 70px 26px;gap:6px;align-items:center;margin-bottom:5px}
+.qline input{padding:5px 7px;font-size:13px;border-radius:6px;min-width:0;width:100%}
+.qline .qlt{text-align:right;font-size:13px;font-weight:600;white-space:nowrap}
+.qline.qlabels{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px}
+.qline.qlabels span:nth-child(5){text-align:right}
+.qrm{background:transparent;border:none;color:var(--muted);padding:0;font-size:13px}
+.qrm:hover{color:var(--danger)}
+.qsecfoot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:13px;color:var(--muted)}
+.qsecfoot b{color:var(--text)}
+.qfoot{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;align-items:center}
+.qfoot .qgrand{margin-left:auto;font-size:13px;color:var(--muted)}
+.qfoot .qgrand b{color:var(--accent);font-size:16px}
+/* customer view — clean, read-only, screenshot-friendly */
+#quoteViewOverlay .modal{max-width:760px;padding:30px 28px}
+.cq h3{text-align:center;font-size:26px;margin:4px 0 4px;letter-spacing:-.01em}
+.cq .cqsub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:22px}
+.cqsec{margin-bottom:22px}
+.cqbox{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--panel)}
+.cqbox .cqtitle{background:var(--panel2);color:var(--link);font-weight:700;font-size:18px;padding:13px 18px}
+.cqrow{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 1fr 0.8fr;gap:10px;padding:13px 18px;border-top:1px solid var(--border);align-items:baseline}
+.cqrow .nm{font-weight:600}
+.cqrow .nm small{color:var(--muted);font-weight:400;margin-left:6px}
+.cqrow .vi,.cqrow .pv{color:var(--muted)}
+.cqrow .pv{text-align:right}
+.cqrow .lt{text-align:right;font-weight:600}
+.cqtot{display:flex;justify-content:flex-end;align-items:baseline;gap:22px;padding:10px 18px 0;color:var(--muted);flex-wrap:wrap}
+.cqtot .mo{color:var(--accent);font-size:26px;font-weight:800;margin-left:8px}
+.cqtot b{color:var(--text)}
+.cqnotes{white-space:pre-wrap;color:var(--muted);font-size:13px;border-top:1px dashed var(--border);padding-top:12px;margin-top:4px}
+@media (max-width:560px){
+  #quoteGrid{grid-template-columns:1fr}
+  .qline{grid-template-columns:minmax(0,1fr) 54px 46px 66px 26px}
+  .qline .qlt{display:none}
+  .qline.qlabels span:nth-child(5){display:none}
+  .cqrow{grid-template-columns:minmax(0,1fr) auto;row-gap:2px}
+  .cqrow .pv{text-align:left}
+}
+
 /* stepper: dots + connecting lines, left to right */
 .stepper{display:flex;align-items:flex-start;margin:4px 0}
 .step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;cursor:pointer}
@@ -252,6 +300,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
     <button id="navVendors" class="navtab active">🏪 Vendors</button>
     <button id="navCatalog" class="navtab">🔍 Catalog</button>
     <button id="navOrders" class="navtab">📦 Orders</button>
+    <button id="navQuotes" class="navtab">🧾 Quotes</button>
   </nav>
   <div style="flex:1"></div>
   <span id="vendorHeaderActions">
@@ -290,6 +339,13 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
       <input type="file" id="ordersImportFile" accept=".json" style="display:none">
     </div>
     <div id="orderGrid"></div>
+  </div>
+
+  <div id="viewQuotes" style="display:none">
+    <h2>Quotes</h2>
+    <div class="hint" style="margin-bottom:10px">Draft price quotes for clients — group peptides into protocols/options, set mg, vial count and your price per vial. Click ✨ in a card's corner for a clean, customer-friendly version to screenshot or copy. Quotes are personal — stored only in this browser, never included in Export or sync.</div>
+    <div id="quoteGrid"></div>
+    <datalist id="quotePeptideNames"></datalist>
   </div>
 
 </main>
@@ -511,6 +567,15 @@ create policy "anon full access" on vialhunter_sync
   <div class="mfoot">
     <button id="cartClear" class="danger">Clear cart</button>
     <button id="cartClose">Close</button>
+  </div>
+</div></div>
+
+<!-- Quote customer view -->
+<div class="overlay" id="quoteViewOverlay"><div class="modal">
+  <div class="cq" id="quoteViewBody"></div>
+  <div class="mfoot">
+    <button id="quoteViewCopy">📋 Copy as text</button>
+    <button class="primary" id="quoteViewClose">Close</button>
   </div>
 </div></div>
 
@@ -1454,6 +1519,199 @@ $('#ordersImportFile').onchange = e=>{
   });
   e.target.value='';
 };
+
+/* ============ quotes ============
+   Draft price quotes for clients. Like orders, quotes are personal, so they
+   live under their own localStorage key — never in `db`, so they can't ride
+   along in a shared vendor Export, and they aren't synced. They hold no
+   photos, so plain localStorage is plenty (no IndexedDB needed).
+   Shape: {quotes:[{id, client, notes, created, sections:[{id, title, weeks,
+   lines:[{id, name, mg, qty, price}]}]}]}. A section is one protocol/option
+   the client can choose between, with its own length in weeks (Reta may run
+   4 weeks while Tesa/Ipa runs 12); its blank title falls back to its peptide
+   names joined with " + ". */
+const QUOTESKEY = 'vialhunterQuotesDB_v1';
+let quotesDb = (function(){
+  try{ const d = JSON.parse(localStorage.getItem(QUOTESKEY)); if(d && Array.isArray(d.quotes)) return d; }catch(e){}
+  return {quotes:[]};
+})();
+/* Load-time repair, idempotent: coerce every quote into the expected shape so
+   one hand-edited or older-format record can't throw inside renderAll() and
+   take the Catalog/cart rendering down with it. Also migrates quote-level
+   `weeks` (the first draft of this feature) onto each section. */
+(function normalizeQuotes(){
+  const before = JSON.stringify(quotesDb);
+  const str = v => v==null ? '' : String(v);
+  const arr = v => Array.isArray(v) ? v : [];
+  quotesDb.quotes = quotesDb.quotes.filter(q=>q && typeof q==='object').map(q=>{
+    const sections = arr(q.sections).filter(x=>x && typeof x==='object').map(sec=>{
+      const lines = arr(sec.lines).filter(x=>x && typeof x==='object').map(l=>({id:str(l.id)||uid(), name:str(l.name), mg:str(l.mg), qty:str(l.qty), price:str(l.price)}));
+      return {id:str(sec.id)||uid(), title:str(sec.title), weeks:'weeks' in sec ? sec.weeks : ('weeks' in q ? q.weeks : 12), lines:lines.length?lines:[newQuoteLine()]};
+    });
+    return {id:str(q.id)||uid(), client:str(q.client), notes:str(q.notes), created:str(q.created), sections:sections.length?sections:[newQuoteSection()]};
+  });
+  if(JSON.stringify(quotesDb)!==before) saveQuotes();
+})();
+function saveQuotes(){
+  try{ localStorage.setItem(QUOTESKEY, JSON.stringify(quotesDb)); }
+  catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some vendor/contact photos, or Export a backup and clear old data.'); else throw e; }
+}
+function newQuoteLine(){ return {id:uid(), name:'', mg:'', qty:'', price:''}; }
+function newQuoteSection(weeks){ return {id:uid(), title:'', weeks:weeks||12, lines:[newQuoteLine()]}; }
+function newQuote(){ return {id:uid(), client:'', notes:'', created:new Date().toLocaleDateString(), sections:[newQuoteSection()]}; }
+function findQuote(id){ return quotesDb.quotes.find(q=>q.id===id); }
+function qLineTotal(l){ return (+l.qty||0) * (+l.price||0); }
+function qSecTotal(s){ return s.lines.reduce((a,l)=>a+qLineTotal(l), 0); }
+// Weeks → months at 4 weeks/month, matching how clients think about a "12-week = 3-month" protocol.
+// Under 4 weeks a "monthly" figure would exceed the whole protocol's cost, so none is shown.
+function qWeeks(s){ return +s.weeks>0 ? +s.weeks : null; }
+function qMonthly(total, weeks){ return weeks>=4 ? total / (weeks/4) : null; }
+// Headline "12-Week Peptide Pricing" only when every shown option shares one length.
+function qCommonWeeks(secs){ const w = [...new Set(secs.map(qWeeks))]; return w.length===1 ? w[0] : null; }
+function qSecTitle(s, lines){ return s.title.trim() || [...new Set((lines||s.lines).map(l=>l.name.trim()).filter(Boolean))].join(' + ') || 'Option'; }
+function qMg(mg){ mg = String(mg||'').trim(); return !mg ? '' : /^[\d.]+$/.test(mg) ? mg+'mg' : mg; }
+function qLinesFilled(s){ return s.lines.filter(l=>l.name.trim() || +l.qty || +l.price); }
+// Lines that make it onto the customer view: an actual quantity ordered.
+function qLinesShown(s){ return s.lines.filter(l=>+l.qty>0); }
+// Exact amounts (unit prices, line/option totals) keep cents when they have
+// them, so "3 × $49.50 = $148.50" adds up; only the monthly estimate is rounded.
+function qMoney(n){ n = Math.round(n*100)/100; return '$' + n.toLocaleString(undefined, {minimumFractionDigits:n%1?2:0, maximumFractionDigits:2}); }
+function qMoneyWhole(n){ return '$' + Math.round(n).toLocaleString(); }
+
+function renderQuotes(){
+  const names = new Set();
+  db.warehouses.forEach(w=>(w.items||[]).forEach(it=>{ if(it.name) names.add(it.name.trim()); }));
+  $('#quotePeptideNames').innerHTML = [...names].sort().map(n=>`<option value="${esc(n)}">`).join('');
+
+  const g = $('#quoteGrid');
+  g.innerHTML = quotesDb.quotes.slice().reverse().map(q=>`
+    <div class="qcard" data-quote="${q.id}">
+      <button class="qpreview primary" data-act="preview" title="Customer-friendly view">✨</button>
+      <div class="qhead">
+        <input class="qclient pii" data-f="client" value="${esc(q.client)}" placeholder="Client name">
+      </div>
+      ${q.sections.map(s=>`
+        <div class="qsec" data-sec="${s.id}">
+          <div class="qsechead">
+            <input data-f="title" value="${esc(s.title)}" placeholder="${esc(qSecTitle(s)==='Option'?'Protocol name, e.g. Tesamorelin + Ipamorelin':qSecTitle(s))}">
+            <input class="qweeks" data-f="weeks" type="number" min="1" value="${esc(s.weeks)}" title="Length of this protocol (weeks)"><span class="hint">wks</span>
+            <button class="small danger" data-act="rmsec" title="Remove this option">✕</button>
+          </div>
+          <div class="qline qlabels"><span>Peptide</span><span>mg</span><span>Qty</span><span>$/vial</span><span>Total</span><span></span></div>
+          ${s.lines.map(l=>`
+            <div class="qline" data-line="${l.id}">
+              <input data-f="name" list="quotePeptideNames" value="${esc(l.name)}" placeholder="Peptide">
+              <input data-f="mg" value="${esc(l.mg)}" placeholder="10">
+              <input data-f="qty" type="number" min="0" value="${esc(l.qty)}" placeholder="1">
+              <input data-f="price" type="number" min="0" step="0.01" value="${esc(l.price)}" placeholder="0">
+              <span class="qlt" data-out="line">${qMoney(qLineTotal(l))}</span>
+              <button class="qrm" data-act="rmline" title="Remove line">✕</button>
+            </div>`).join('')}
+          <div class="qsecfoot">
+            <button class="small" data-act="addline">＋ Peptide</button>
+            <span data-out="sec"></span>
+          </div>
+        </div>`).join('')}
+      <textarea data-f="notes" rows="2" placeholder="Notes for the client (optional) — shown at the bottom of the customer view">${esc(q.notes)}</textarea>
+      <div class="qfoot">
+        <button class="small" data-act="addsec">＋ Option</button>
+        <button class="small" data-act="dup">Duplicate</button>
+        <button class="small danger" data-act="del">Delete</button>
+        <span class="qgrand" data-out="grand"></span>
+      </div>
+    </div>`).join('');
+  const add = document.createElement('div');
+  add.className = 'addcard';
+  add.innerHTML = '<div class="big">＋</div><div>New quote</div>';
+  add.onclick = ()=>{ quotesDb.quotes.push(newQuote()); saveQuotes(); renderQuotes(); const i=$('#quoteGrid .qclient'); if(i) i.focus(); };
+  g.appendChild(add);
+  g.querySelectorAll('.qcard').forEach(updateQuoteTotals);
+}
+// Refresh only the computed numbers in one card, so typing never re-renders
+// the inputs (which would steal focus mid-keystroke).
+function updateQuoteTotals(card){
+  const q = findQuote(card.dataset.quote); if(!q) return;
+  q.sections.forEach(s=>{
+    const se = card.querySelector(`[data-sec="${s.id}"]`); if(!se) return;
+    s.lines.forEach(l=>{ const o = se.querySelector(`[data-line="${l.id}"] [data-out="line"]`); if(o) o.textContent = qMoney(qLineTotal(l)); });
+    const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
+    se.querySelector('[data-out="sec"]').innerHTML = `${mo!=null?`Monthly <b>${qMoneyWhole(mo)}</b> · `:''}${wk?wk+'-wk ':''}Total <b>${qMoney(t)}</b>`;
+    const ti = se.querySelector('[data-f="title"]'); if(!s.title) ti.placeholder = qSecTitle(s)==='Option' ? 'Protocol name, e.g. Tesamorelin + Ipamorelin' : qSecTitle(s);
+  });
+  const n = q.sections.length;
+  card.querySelector('[data-out="grand"]').innerHTML = n>1 ? `${n} options` : '';
+}
+$('#quoteGrid').addEventListener('input', e=>{
+  const f = e.target.dataset.f; if(!f) return;
+  const card = e.target.closest('.qcard'), q = card && findQuote(card.dataset.quote); if(!q) return;
+  const secEl = e.target.closest('[data-sec]'), lineEl = e.target.closest('[data-line]');
+  const s = secEl && q.sections.find(x=>x.id===secEl.dataset.sec);
+  const target = lineEl ? s.lines.find(x=>x.id===lineEl.dataset.line) : s && (f==='title' || f==='weeks') ? s : q;
+  target[f] = e.target.value;
+  saveQuotes(); updateQuoteTotals(card);
+});
+$('#quoteGrid').addEventListener('click', e=>{
+  const btn = e.target.closest('[data-act]'); if(!btn) return;
+  const card = btn.closest('.qcard'), q = card && findQuote(card.dataset.quote); if(!q) return;
+  const secEl = btn.closest('[data-sec]'), s = secEl && q.sections.find(x=>x.id===secEl.dataset.sec);
+  const act = btn.dataset.act;
+  if(act==='preview') return openQuoteView(q);
+  if(act==='addline'){ s.lines.push(newQuoteLine()); }
+  else if(act==='rmline'){ s.lines = s.lines.filter(l=>l.id!==btn.closest('[data-line]').dataset.line); if(!s.lines.length) s.lines.push(newQuoteLine()); }
+  else if(act==='addsec'){ const last = q.sections[q.sections.length-1]; q.sections.push(newQuoteSection(last && qWeeks(last))); }
+  else if(act==='rmsec'){ if(qLinesFilled(s).length && !confirm('Remove “'+qSecTitle(s)+'” from this quote?')) return; q.sections = q.sections.filter(x=>x!==s); if(!q.sections.length) q.sections.push(newQuoteSection()); }
+  else if(act==='dup'){ const c = JSON.parse(JSON.stringify(q)); c.id=uid(); c.created=new Date().toLocaleDateString(); c.client = q.client ? q.client+' (copy)' : ''; c.sections.forEach(x=>{ x.id=uid(); x.lines.forEach(l=>l.id=uid()); }); quotesDb.quotes.push(c); }
+  else if(act==='del'){ if(!confirm('Delete the quote'+(q.client?' for '+q.client:'')+'? This can\'t be undone.')) return; quotesDb.quotes = quotesDb.quotes.filter(x=>x!==q); }
+  saveQuotes(); renderQuotes();
+  if(act==='addline'){ const ins = $(`#quoteGrid [data-sec="${s.id}"]`).querySelectorAll('[data-f="name"]'); ins[ins.length-1].focus(); }
+});
+
+let quoteViewing = null;
+function openQuoteView(q){
+  const secs = q.sections.map(s=>({s, lines:qLinesShown(s)})).filter(x=>x.lines.length);
+  if(!secs.length) return toastErr('Add at least one peptide with a quantity to this quote first.');
+  quoteViewing = q;
+  const common = qCommonWeeks(secs.map(x=>x.s));
+  $('#quoteViewBody').innerHTML = `
+    <h3>${common?common+'-Week ':''}Peptide Pricing</h3>
+    <div class="cqsub">${q.client?`Prepared for <span class="pii">${esc(q.client)}</span> · `:''}${esc(new Date().toLocaleDateString())}</div>
+    ${secs.map(({s, lines})=>{
+      const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
+      return `<div class="cqsec">
+        <div class="cqbox">
+          <div class="cqtitle">${esc(qSecTitle(s, lines))}</div>
+          ${lines.map(l=>{ const n=+l.qty||0; return `<div class="cqrow">
+            <span class="nm">${esc(l.name||'—')}${qMg(l.mg)?`<small>${esc(qMg(l.mg))}</small>`:''}</span>
+            <span class="vi">${n} vial${n===1?'':'s'}</span>
+            <span class="pv">${qMoney(+l.price||0)} / vial</span>
+            <span class="lt">${qMoney(qLineTotal(l))}</span>
+          </div>`; }).join('')}
+        </div>
+        <div class="cqtot">${mo!=null?`<span>Monthly<span class="mo">${qMoneyWhole(mo)}</span></span>`:''}<span>${wk?wk+'-week ':''}total: <b>${qMoney(t)}</b></span></div>
+      </div>`; }).join('')}
+    ${q.notes.trim()?`<div class="cqnotes">${esc(q.notes.trim())}</div>`:''}`;
+  $('#quoteViewOverlay').classList.add('open');
+}
+function quoteText(q){
+  const common = qCommonWeeks(q.sections.filter(s=>qLinesShown(s).length));
+  const out = [(common?common+'-Week ':'')+'Peptide Pricing'+(q.client?' — '+q.client:'')];
+  q.sections.forEach(s=>{
+    const lines = qLinesShown(s); if(!lines.length) return;
+    const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
+    out.push('', qSecTitle(s, lines));
+    lines.forEach(l=>{ const n=+l.qty||0; out.push(`• ${l.name}${qMg(l.mg)?' '+qMg(l.mg):''} — ${n} vial${n===1?'':'s'} × ${qMoney(+l.price||0)} = ${qMoney(qLineTotal(l))}`); });
+    out.push((mo!=null?'Monthly '+qMoneyWhole(mo)+' · ':'')+(wk?wk+'-week ':'')+'total '+qMoney(t));
+  });
+  if(q.notes.trim()) out.push('', q.notes.trim());
+  return out.join('\n');
+}
+// navigator.clipboard only exists in secure contexts (https/localhost) — e.g. plain http from a LAN IP has none.
+$('#quoteViewCopy').onclick = ()=>{
+  if(!quoteViewing) return;
+  if(!navigator.clipboard || !navigator.clipboard.writeText) return toastErr('Clipboard isn\'t available here (needs https or localhost) — select the quote text and copy it manually.');
+  navigator.clipboard.writeText(quoteText(quoteViewing)).then(()=>toast('Quote copied'), ()=>toastErr('Couldn\'t access the clipboard'));
+};
+$('#quoteViewClose').onclick = ()=>$('#quoteViewOverlay').classList.remove('open');
 
 /* ============ upload / parsing ============
    Every warehouse row and every vendor's "new warehouse" box is its own drop
@@ -2409,30 +2667,33 @@ function applyTheme(t){
 $('#themeBtn').onclick = ()=> applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');
 applyTheme((function(){ try{ const s=localStorage.getItem('vialhunter_theme'); if(s==='light'||s==='dark') return s; }catch(e){} return 'dark'; })());
 
-/* ============ view switching (Vendors / Catalog / Orders) ============
-   One page, three views toggled by JS — keeps the app a single static file
+/* ============ view switching (Vendors / Catalog / Orders / Quotes) ============
+   One page, four views toggled by JS — keeps the app a single static file
    (no build step, no second page to keep in sync) while still giving each
    tab its own nav button and a bookmarkable #hash URL. */
 function setView(v){
-  if(v!=='catalog' && v!=='orders') v = 'vendors';
+  if(v!=='catalog' && v!=='orders' && v!=='quotes') v = 'vendors';
   $('#viewVendors').style.display = v==='vendors' ? '' : 'none';
   $('#viewCatalog').style.display = v==='catalog' ? '' : 'none';
   $('#viewOrders').style.display = v==='orders' ? '' : 'none';
-  $('#vendorHeaderActions').style.display = v==='orders' ? 'none' : '';
+  $('#viewQuotes').style.display = v==='quotes' ? '' : 'none';
+  $('#vendorHeaderActions').style.display = (v==='orders' || v==='quotes') ? 'none' : '';
   $('#navVendors').classList.toggle('active', v==='vendors');
   $('#navCatalog').classList.toggle('active', v==='catalog');
   $('#navOrders').classList.toggle('active', v==='orders');
+  $('#navQuotes').classList.toggle('active', v==='quotes');
   const hash = v==='vendors' ? '' : '#'+v;
   if(location.hash !== hash) history.replaceState(null, '', location.pathname+location.search+hash);
 }
 $('#navVendors').onclick = ()=>setView('vendors');
 $('#navCatalog').onclick = ()=>setView('catalog');
 $('#navOrders').onclick = ()=>setView('orders');
+$('#navQuotes').onclick = ()=>setView('quotes');
 window.addEventListener('hashchange', ()=>setView(location.hash.replace('#','')));
 setView(location.hash.replace('#',''));
 
 /* ============ init ============ */
-function renderAll(){ renderVendors(); renderOrders(); renderVendorToggles(); renderCountryToggles(); renderResults(); renderCartCount(); }
+function renderAll(){ renderVendors(); renderOrders(); renderQuotes(); renderVendorToggles(); renderCountryToggles(); renderResults(); renderCartCount(); }
 renderAll();
 ordersReady.then(renderOrders, e=>console.error('Orders failed to load', e));
 //JS-END

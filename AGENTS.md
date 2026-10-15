@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex when working with code in this repository.
+This file provides guidance to AI coding agents (Codex, Claude Code, and others) when working with code in this repository. It is the single source of truth — `CLAUDE.md` just imports it with `@AGENTS.md`, so edit guidance here only.
 
 ## What this is
 
@@ -23,6 +23,7 @@ Everything — HTML, CSS, and JS — lives in `index.html`, delimited by `//JS-S
 - `db` (localStorage key `vialhunterDB_v1`): `{vendors, warehouses, cart, settings}`. Vendors have contacts (with WhatsApp numbers) and can be "banished" (soft-hidden, excluded from optimizer/best-price). Each vendor owns one or more warehouses; each warehouse holds `items: [{code, name, spec, price}]`, plus `shipping`, `freeOver`, `minOrder`, `country`.
 - `ordersDb` (key `vialhunterOrdersDB_v1`): purchase-tracking history, **deliberately separate from `db`** so personal order history never rides along in a shared vendor/pricing export. Each order has a shipping stepper (Ordered → Paid → Shipped → Received) and independent `tests[]` entries with their own stepper (Sample Shipped → Testing → Results).
 - **Orders live in IndexedDB, not localStorage** (db `vialhunter`, store `kv`, under the same `vialhunterOrdersDB_v1` key) because order photos/COAs/lab reports blow past the ~5-10MB localStorage quota. The `idbStore` wrapper, an `idbOk` flag that falls back to localStorage, and a one-time migration out of localStorage all live in the orders section. Consequences to respect: orders load **asynchronously**, so anything reading them at startup must await the `ordersReady` promise, and `saveOrders()` serializes writes through `ordersWriteChain` (snapshotting `ordersDb` first) so in-memory edits can't race a queued write. Stage dates are stored as **locale** date strings (`toLocaleDateString()`) and converted for `<input type=date>` by `toIsoDate`/`fromIsoDate`.
+- `quotesDb` (key `vialhunterQuotesDB_v1`, plain localStorage): client price quotes drafted in the Quotes view — `{quotes:[{client, notes, sections:[{title, weeks, lines:[{name, mg, qty, price}]}]}]}` (weeks are per section, so each option can run a different length). Personal like orders, so kept out of `db`, Export, and Supabase sync. Cards edit inline; the `input` handler mutates the model and calls `updateQuoteTotals` instead of re-rendering, so typing never loses focus.
 - `syncMeta` (key `vialhunterSyncMeta_v1`): last-synced timestamp/error, sync-only bookkeeping, never exported.
 - One-time migration functions run at load (`migrateOrderPhotos`, `migrateOrderTests`, the `OLDKEY`/pre-rename migration) — follow this pattern (idempotent, guarded by a shape check, `changed` flag before re-saving) if you add another schema shift.
 - Secrets live in `settings` (`apiKey`, `supabaseUrl`, `supabaseKey`, `supabaseEnabled`; `SETTINGS_DEFAULTS` is the shape of record). Two separate mechanisms keep them out of files: `exportPayload()` is **allowlist**-built (only vendors/warehouses/cart/model are ever serialized) and ends with a tripwire scan that refuses the export if the key string appears anywhere in the payload; the import handlers `delete` all four keys off any incoming `settings` and re-apply the local ones from a `keep` object. Keep both halves when touching export/import — the allowlist alone would still let an Import overwrite local credentials.
@@ -49,7 +50,7 @@ The remote is a single table `vialhunter_sync`, one row at `id='default'`, holdi
 
 ### UI shell
 
-Three views (Vendors / Catalog / Orders) are one page toggled by `setView()`, which show/hides `#viewVendors|#viewCatalog|#viewOrders`, syncs the nav buttons, and mirrors the view into a bookmarkable `#hash` (`hashchange` reads it back). Modals are overlay divs toggled with an `open` class, not separate pages. `applyBlur()` toggles a body-level `blur-on` class for the privacy-blur setting, so anything new that shows prices/contacts should be reachable by that CSS rather than blurred imperatively.
+Four views (Vendors / Catalog / Orders / Quotes) are one page toggled by `setView()`, which show/hides `#viewVendors|#viewCatalog|#viewOrders|#viewQuotes`, syncs the nav buttons, and mirrors the view into a bookmarkable `#hash` (`hashchange` reads it back). Modals are overlay divs toggled with an `open` class, not separate pages. `applyBlur()` toggles a body-level `blur-on` class for the privacy-blur setting, so anything new that shows prices/contacts should be reachable by that CSS rather than blurred imperatively.
 
 ## Working in this codebase
 
@@ -57,5 +58,4 @@ Three views (Vendors / Catalog / Orders) are one page toggled by `setView()`, wh
 - CSS custom properties (`--bg`, `--panel`, `--accent`, etc.) define both the dark ("Graphite & Gold") and light ("Warm Paper") themes via `:root` and `:root[data-theme="light"]`. Add new colors as variables in both blocks, not hardcoded hex values.
 - `esc()` is used pervasively for HTML-escaping user data before template-literal interpolation into `innerHTML` — never interpolate user-controlled strings (vendor names, item names, notes, etc.) without it.
 - `isQuotaError()` + a toast is the established pattern for localStorage `setItem` failures (photos/COAs can fill the ~5-10MB quota) — follow it for any new code that writes to localStorage directly.
-- To navigate the single file, grep its section banners rather than scrolling: `grep -n '============' index.html` prints the whole table of contents (state → Supabase sync → vendors → warehouses → orders → upload/parsing → PDF-image via Claude API → search/catalog → cart & optimizer → settings/export/import → privacy blur → theme → view switching → init).
-- `CLAUDE.md` is a near-verbatim mirror of this file for Claude Code. If you change guidance here, mirror it there (its only intended differences are the title and the tool name).
+- To navigate the single file, grep its section banners rather than scrolling: `grep -n '============' index.html` prints the whole table of contents (state → Supabase sync → vendors → warehouses → orders → quotes → upload/parsing → PDF-image via Claude API → search/catalog → cart & optimizer → settings/export/import → privacy blur → theme → view switching → init).
