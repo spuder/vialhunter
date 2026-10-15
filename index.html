@@ -130,7 +130,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .qcard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;position:relative}
 .qhead{display:flex;gap:8px;align-items:center;padding-right:40px}
 .qhead .qclient{flex:1;min-width:0;font-weight:700;font-size:16px}
-.qhead .qweeks{width:62px;text-align:center}
+.qsechead .qweeks{flex:0 0 58px;width:58px;text-align:center;font-weight:400;color:var(--text)}
 .qpreview{position:absolute;top:10px;right:10px;width:34px;height:34px;padding:0;border-radius:10px;font-size:17px;display:flex;align-items:center;justify-content:center}
 .qsec{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px}
 .qsechead{display:flex;gap:8px;align-items:center;margin-bottom:8px}
@@ -1525,27 +1525,41 @@ $('#ordersImportFile').onchange = e=>{
    live under their own localStorage key — never in `db`, so they can't ride
    along in a shared vendor Export, and they aren't synced. They hold no
    photos, so plain localStorage is plenty (no IndexedDB needed).
-   Shape: {quotes:[{id, client, weeks, notes, created, sections:[{id, title,
+   Shape: {quotes:[{id, client, notes, created, sections:[{id, title, weeks,
    lines:[{id, name, mg, qty, price}]}]}]}. A section is one protocol/option
-   the client can choose between; its blank title falls back to its peptide
+   the client can choose between, with its own length in weeks (Reta may run
+   4 weeks while Tesa/Ipa runs 12); its blank title falls back to its peptide
    names joined with " + ". */
 const QUOTESKEY = 'vialhunterQuotesDB_v1';
 let quotesDb = (function(){
   try{ const d = JSON.parse(localStorage.getItem(QUOTESKEY)); if(d && Array.isArray(d.quotes)) return d; }catch(e){}
   return {quotes:[]};
 })();
+// One-time migration: weeks moved from the quote onto each section.
+(function migrateQuoteWeeks(){
+  let changed = false;
+  quotesDb.quotes.forEach(q=>{
+    if(!('weeks' in q)) return;
+    (q.sections||[]).forEach(s=>{ if(!('weeks' in s)) s.weeks = q.weeks; });
+    delete q.weeks; changed = true;
+  });
+  if(changed) saveQuotes();
+})();
 function saveQuotes(){
   try{ localStorage.setItem(QUOTESKEY, JSON.stringify(quotesDb)); }
   catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some vendor/contact photos, or Export a backup and clear old data.'); else throw e; }
 }
 function newQuoteLine(){ return {id:uid(), name:'', mg:'', qty:'', price:''}; }
-function newQuoteSection(){ return {id:uid(), title:'', lines:[newQuoteLine()]}; }
-function newQuote(){ return {id:uid(), client:'', weeks:12, notes:'', created:new Date().toLocaleDateString(), sections:[newQuoteSection()]}; }
+function newQuoteSection(weeks){ return {id:uid(), title:'', weeks:weeks||12, lines:[newQuoteLine()]}; }
+function newQuote(){ return {id:uid(), client:'', notes:'', created:new Date().toLocaleDateString(), sections:[newQuoteSection()]}; }
 function findQuote(id){ return quotesDb.quotes.find(q=>q.id===id); }
 function qLineTotal(l){ return (+l.qty||0) * (+l.price||0); }
 function qSecTotal(s){ return s.lines.reduce((a,l)=>a+qLineTotal(l), 0); }
 // Weeks → months at 4 weeks/month, matching how clients think about a "12-week = 3-month" protocol.
-function qMonthly(total, weeks){ return +weeks>0 ? total / (+weeks/4) : null; }
+function qWeeks(s){ return +s.weeks>0 ? +s.weeks : null; }
+function qMonthly(total, weeks){ return weeks ? total / (weeks/4) : null; }
+// Headline "12-Week Peptide Pricing" only when every shown option shares one length.
+function qCommonWeeks(secs){ const w = [...new Set(secs.map(qWeeks))]; return w.length===1 ? w[0] : null; }
 function qSecTitle(s){ return s.title.trim() || [...new Set(s.lines.map(l=>l.name.trim()).filter(Boolean))].join(' + ') || 'Option'; }
 function qMg(mg){ mg = String(mg||'').trim(); return !mg ? '' : /^[\d.]+$/.test(mg) ? mg+'mg' : mg; }
 function qLinesFilled(s){ return s.lines.filter(l=>l.name.trim() || +l.qty || +l.price); }
@@ -1563,12 +1577,12 @@ function renderQuotes(){
       <button class="qpreview primary" data-act="preview" title="Customer-friendly view">✨</button>
       <div class="qhead">
         <input class="qclient pii" data-f="client" value="${esc(q.client)}" placeholder="Client name">
-        <input class="qweeks" data-f="weeks" type="number" min="1" value="${esc(q.weeks)}" title="Protocol length (weeks)"><span class="hint">wks</span>
       </div>
       ${q.sections.map(s=>`
         <div class="qsec" data-sec="${s.id}">
           <div class="qsechead">
             <input data-f="title" value="${esc(s.title)}" placeholder="${esc(qSecTitle(s)==='Option'?'Protocol name, e.g. Tesamorelin + Ipamorelin':qSecTitle(s))}">
+            <input class="qweeks" data-f="weeks" type="number" min="1" value="${esc(s.weeks)}" title="Length of this protocol (weeks)"><span class="hint">wks</span>
             <button class="small danger" data-act="rmsec" title="Remove this option">✕</button>
           </div>
           <div class="qline qlabels"><span>Peptide</span><span>mg</span><span>Qty</span><span>$/vial</span><span>Total</span><span></span></div>
@@ -1608,8 +1622,8 @@ function updateQuoteTotals(card){
   q.sections.forEach(s=>{
     const se = card.querySelector(`[data-sec="${s.id}"]`); if(!se) return;
     s.lines.forEach(l=>{ const o = se.querySelector(`[data-line="${l.id}"] [data-out="line"]`); if(o) o.textContent = money(qLineTotal(l)); });
-    const t = qSecTotal(s), mo = qMonthly(t, q.weeks);
-    se.querySelector('[data-out="sec"]').innerHTML = `${mo!=null?`Monthly <b>${qMoney(mo)}</b> · `:''}Total <b>${qMoney(t)}</b>`;
+    const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
+    se.querySelector('[data-out="sec"]').innerHTML = `${mo!=null?`Monthly <b>${qMoney(mo)}</b> · `:''}${wk?wk+'-wk ':''}Total <b>${qMoney(t)}</b>`;
     const ti = se.querySelector('[data-f="title"]'); if(!s.title) ti.placeholder = qSecTitle(s)==='Option' ? 'Protocol name, e.g. Tesamorelin + Ipamorelin' : qSecTitle(s);
   });
   const n = q.sections.length;
@@ -1620,7 +1634,7 @@ $('#quoteGrid').addEventListener('input', e=>{
   const card = e.target.closest('.qcard'), q = card && findQuote(card.dataset.quote); if(!q) return;
   const secEl = e.target.closest('[data-sec]'), lineEl = e.target.closest('[data-line]');
   const s = secEl && q.sections.find(x=>x.id===secEl.dataset.sec);
-  const target = lineEl ? s.lines.find(x=>x.id===lineEl.dataset.line) : s && f==='title' ? s : q;
+  const target = lineEl ? s.lines.find(x=>x.id===lineEl.dataset.line) : s && (f==='title' || f==='weeks') ? s : q;
   target[f] = e.target.value;
   saveQuotes(); updateQuoteTotals(card);
 });
@@ -1632,7 +1646,7 @@ $('#quoteGrid').addEventListener('click', e=>{
   if(act==='preview') return openQuoteView(q);
   if(act==='addline'){ s.lines.push(newQuoteLine()); }
   else if(act==='rmline'){ s.lines = s.lines.filter(l=>l.id!==btn.closest('[data-line]').dataset.line); if(!s.lines.length) s.lines.push(newQuoteLine()); }
-  else if(act==='addsec'){ q.sections.push(newQuoteSection()); }
+  else if(act==='addsec'){ const last = q.sections[q.sections.length-1]; q.sections.push(newQuoteSection(last && qWeeks(last))); }
   else if(act==='rmsec'){ if(qLinesFilled(s).length && !confirm('Remove “'+qSecTitle(s)+'” from this quote?')) return; q.sections = q.sections.filter(x=>x!==s); if(!q.sections.length) q.sections.push(newQuoteSection()); }
   else if(act==='dup'){ const c = JSON.parse(JSON.stringify(q)); c.id=uid(); c.created=new Date().toLocaleDateString(); c.client = q.client ? q.client+' (copy)' : ''; c.sections.forEach(x=>{ x.id=uid(); x.lines.forEach(l=>l.id=uid()); }); quotesDb.quotes.push(c); }
   else if(act==='del'){ if(!confirm('Delete the quote'+(q.client?' for '+q.client:'')+'? This can\'t be undone.')) return; quotesDb.quotes = quotesDb.quotes.filter(x=>x!==q); }
@@ -1645,12 +1659,12 @@ function openQuoteView(q){
   const secs = q.sections.map(s=>({s, lines:qLinesFilled(s)})).filter(x=>x.lines.length);
   if(!secs.length) return toastErr('Add at least one peptide to this quote first.');
   quoteViewing = q;
-  const wk = +q.weeks>0 ? +q.weeks : null;
+  const common = qCommonWeeks(secs.map(x=>x.s));
   $('#quoteViewBody').innerHTML = `
-    <h3>${wk?wk+'-Week ':''}Peptide Pricing</h3>
+    <h3>${common?common+'-Week ':''}Peptide Pricing</h3>
     <div class="cqsub">${q.client?`Prepared for <span class="pii">${esc(q.client)}</span> · `:''}${esc(new Date().toLocaleDateString())}</div>
     ${secs.map(({s, lines})=>{
-      const t = qSecTotal(s), mo = qMonthly(t, wk);
+      const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
       return `<div class="cqsec">
         <div class="cqbox">
           <div class="cqtitle">${esc(qSecTitle(s))}</div>
@@ -1667,11 +1681,11 @@ function openQuoteView(q){
   $('#quoteViewOverlay').classList.add('open');
 }
 function quoteText(q){
-  const wk = +q.weeks>0 ? +q.weeks : null;
-  const out = [(wk?wk+'-Week ':'')+'Peptide Pricing'+(q.client?' — '+q.client:'')];
+  const common = qCommonWeeks(q.sections.filter(s=>qLinesFilled(s).length));
+  const out = [(common?common+'-Week ':'')+'Peptide Pricing'+(q.client?' — '+q.client:'')];
   q.sections.forEach(s=>{
     const lines = qLinesFilled(s); if(!lines.length) return;
-    const t = qSecTotal(s), mo = qMonthly(t, wk);
+    const wk = qWeeks(s), t = qSecTotal(s), mo = qMonthly(t, wk);
     out.push('', qSecTitle(s));
     lines.forEach(l=>{ const n=+l.qty||0; out.push(`• ${l.name}${qMg(l.mg)?' '+qMg(l.mg):''} — ${n} vial${n===1?'':'s'} × ${qMoney(+l.price||0)} = ${qMoney(qLineTotal(l))}`); });
     out.push((mo!=null?'Monthly '+qMoney(mo)+' · ':'')+(wk?wk+'-week ':'')+'total '+qMoney(t));
