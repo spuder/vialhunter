@@ -364,7 +364,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
 
   <div id="viewQuotes" style="display:none">
     <h2>Quotes</h2>
-    <div class="hint" style="margin-bottom:10px">Draft price quotes for clients — group peptides into protocols/options, set mg, vial count and your price per vial. Click ✨ in a card's corner for a clean, customer-friendly version to screenshot or copy. Quotes are personal — stored only in this browser, never included in Export or sync.</div>
+    <div class="hint" style="margin-bottom:10px">Draft price quotes for clients — group peptides into protocols/options, set mg, vial count and your price per vial. Click ✨ in a card's corner for a clean, customer-friendly version to screenshot or copy. Use a nickname rather than the client's real name. Quotes are personal — never included in Export, but synced to your Supabase project when one is paired.</div>
     <div id="quoteGrid"></div>
     <datalist id="quotePeptideNames"></datalist>
   </div>
@@ -515,7 +515,7 @@ body.blur-on .vphoto img:hover, body.blur-on .cphoto img:hover, body.blur-on img
   <p class="hint">Your key never leaves this browser except to call api.anthropic.com directly. All vendor/price data is stored in this browser's localStorage — use Export regularly to back up.</p>
 
   <h3 style="margin-top:22px">☁ Supabase sync <span class="hint" style="font-weight:400">(optional)</span></h3>
-  <p class="hint" style="margin-bottom:10px">Everything stays in this browser by default (vendors in localStorage, orders and their files in IndexedDB). Pairing a Supabase project lets you sync vendors, cart, and orders across devices (e.g. a phone and a laptop).</p>
+  <p class="hint" style="margin-bottom:10px">Everything stays in this browser by default (vendors in localStorage, orders and their files in IndexedDB). Pairing a Supabase project lets you sync vendors, cart, orders, and quotes across devices (e.g. a phone and a laptop).</p>
   <div class="frow"><div>
     <label>Supabase project URL</label>
     <input id="setSbUrl" placeholder="https://xxxxxxxx.supabase.co">
@@ -625,8 +625,9 @@ let db = load();
 /* ============ Supabase sync (optional) ============
    Everything below keeps the app fully static/no-build: supabase-js is lazy-loaded
    from a CDN only once a project is actually paired. save()/saveOrders() call
-   scheduleSync() on every write, which debounces a full-snapshot upsert to a
-   single row so vendors/cart/orders stay mirrored across devices. */
+   scheduleSync() on every write (as does saveQuotes()), which debounces a
+   full-snapshot upsert to a single row so vendors/cart/orders/quotes stay
+   mirrored across devices. */
 const SYNC_META_KEY = 'vialhunterSyncMeta_v1'; // last-synced timestamp/error — not exported, not shareable data
 let syncMeta = (function(){ try{ return JSON.parse(localStorage.getItem(SYNC_META_KEY))||{}; }catch(e){ return {}; } })();
 function saveSyncMeta(){ try{ localStorage.setItem(SYNC_META_KEY, JSON.stringify(syncMeta)); }catch(e){} }
@@ -1544,8 +1545,10 @@ $('#ordersImportFile').onchange = e=>{
 /* ============ quotes ============
    Draft price quotes for clients. Like orders, quotes are personal, so they
    live under their own localStorage key — never in `db`, so they can't ride
-   along in a shared vendor Export, and they aren't synced. They hold no
-   photos, so plain localStorage is plenty (no IndexedDB needed).
+   along in a shared vendor Export — but, also like orders, they ride in the
+   Supabase snapshot when a project is paired. That's why the UI asks for a
+   client *nickname*: the field is still stored as `client`, but it shouldn't
+   hold a real name. They hold no photos, so plain localStorage is plenty.
    Shape: {quotes:[{id, client, notes, created, sections:[{id, title, weeks,
    sale, stock, lines:[{id, name, mg, qty, price, reg}]}]}]}.
    `stock` is where the option ships from (STOCK_STATUSES key or '');
@@ -1573,7 +1576,7 @@ let quotesDb = (function(){
    one hand-edited or older-format record can't throw inside renderAll() and
    take the Catalog/cart rendering down with it. Also migrates quote-level
    `weeks` (the first draft of this feature) onto each section. */
-(function normalizeQuotes(){
+function normalizeQuotes(){
   const before = JSON.stringify(quotesDb);
   const str = v => v==null ? '' : String(v);
   const arr = v => Array.isArray(v) ? v : [];
@@ -1585,10 +1588,12 @@ let quotesDb = (function(){
     return {id:str(q.id)||uid(), client:str(q.client), notes:str(q.notes), created:str(q.created), sections:sections.length?sections:[newQuoteSection()]};
   });
   if(JSON.stringify(quotesDb)!==before) saveQuotes();
-})();
+}
+normalizeQuotes();
 function saveQuotes(){
   try{ localStorage.setItem(QUOTESKEY, JSON.stringify(quotesDb)); }
   catch(e){ if(isQuotaError(e)) toastErr('⚠ Storage is full — this browser\'s localStorage is out of space. Remove some vendor/contact photos, or Export a backup and clear old data.'); else throw e; }
+  scheduleSync();
 }
 function newQuoteLine(){ return {id:uid(), name:'', mg:'', qty:'', price:'', reg:''}; }
 function newQuoteSection(weeks){ return {id:uid(), title:'', weeks:weeks||12, sale:false, stock:'', lines:[newQuoteLine()]}; }
@@ -1633,7 +1638,7 @@ function renderQuotes(){
     <div class="qcard" data-quote="${q.id}">
       <button class="qpreview primary" data-act="preview" title="Customer-friendly view">✨</button>
       <div class="qhead">
-        <input class="qclient pii" data-f="client" value="${esc(q.client)}" placeholder="Client name">
+        <input class="qclient pii" data-f="client" value="${esc(q.client)}" placeholder="Client nickname" title="A nickname, not their real name — quotes sync to Supabase when paired">
       </div>
       ${q.sections.map(s=>`
         <div class="qsec" data-sec="${s.id}">
@@ -2438,9 +2443,9 @@ async function getSbClient(url, key){
 function buildSyncPayload(){
   const s = Object.assign({}, db.settings);
   delete s.apiKey; delete s.supabaseUrl; delete s.supabaseKey; delete s.supabaseEnabled;
-  return {vendors: db.vendors, warehouses: db.warehouses, cart: db.cart, settings: s, orders: ordersDb.orders};
+  return {vendors: db.vendors, warehouses: db.warehouses, cart: db.cart, settings: s, orders: ordersDb.orders, quotes: quotesDb.quotes};
 }
-function payloadHasData(p){ return !!p && ((p.vendors&&p.vendors.length) || (p.orders&&p.orders.length)); }
+function payloadHasData(p){ return !!p && ((p.vendors&&p.vendors.length) || (p.orders&&p.orders.length) || (p.quotes&&p.quotes.length)); }
 async function fetchRemoteRow(url, key){
   const client = await getSbClient(url, key);
   logDiag('Querying vialhunter_sync table at '+url+' …');
@@ -2474,7 +2479,10 @@ function applyRemoteSnapshot(remote){
   db.settings = Object.assign({}, SETTINGS_DEFAULTS, remote.settings||{}, keep);
   migrateDefaultModel(db);
   ordersDb.orders = remote.orders||[];
-  save(); saveOrders();
+  // A snapshot pushed by a build that predates quote sync has no `quotes` key at
+  // all — keep this device's quotes then, rather than wiping them with nothing.
+  if(Array.isArray(remote.quotes)){ quotesDb.quotes = remote.quotes; normalizeQuotes(); }
+  save(); saveOrders(); saveQuotes();
   suppressSync = false;
   renderAll(); applyBlur(db.settings.blurSensitive);
 }
@@ -2535,7 +2543,7 @@ async function attemptPairing(url, key){
     // no remote data to fall back to here, so the "use remote" option is hidden.
     logDiag('Local data present, remote is empty — offering to migrate up.');
     sbPending = {url, key, remote: null, migrateOnly: true};
-    openSbConflict('Migrate local data to Supabase?', 'This Supabase project is empty. Upload this browser\'s vendors/cart/orders to it so other devices can sync with them?', false);
+    openSbConflict('Migrate local data to Supabase?', 'This Supabase project is empty. Upload this browser\'s vendors/cart/orders/quotes to it so other devices can sync with them?', false);
   } else {
     logDiag('Nothing to migrate either way — connecting.');
     db.settings.supabaseEnabled = true; save();
