@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex when working with code in this repository.
+This file provides guidance to AI coding agents (Codex, Claude Code, and others) when working with code in this repository. It is the single source of truth — `CLAUDE.md` just imports it with `@AGENTS.md`, so edit guidance here only.
 
 ## What this is
 
@@ -58,5 +58,4 @@ Four views (Vendors / Catalog / Orders / Quotes) are one page toggled by `setVie
 - CSS custom properties (`--bg`, `--panel`, `--accent`, etc.) define both the dark ("Graphite & Gold") and light ("Warm Paper") themes via `:root` and `:root[data-theme="light"]`. Add new colors as variables in both blocks, not hardcoded hex values.
 - `esc()` is used pervasively for HTML-escaping user data before template-literal interpolation into `innerHTML` — never interpolate user-controlled strings (vendor names, item names, notes, etc.) without it.
 - `isQuotaError()` + a toast is the established pattern for localStorage `setItem` failures (photos/COAs can fill the ~5-10MB quota) — follow it for any new code that writes to localStorage directly.
-- To navigate the single file, grep its section banners rather than scrolling: `grep -n '============' index.html` prints the whole table of contents (state → Supabase sync → vendors → warehouses → orders → upload/parsing → PDF-image via Claude API → search/catalog → cart & optimizer → settings/export/import → privacy blur → theme → view switching → init).
-- `CLAUDE.md` is a near-verbatim mirror of this file for Claude Code. If you change guidance here, mirror it there (its only intended differences are the title and the tool name).
+- To navigate the single file, grep its section banners rather than scrolling: `grep -n '============' index.html` prints the whole table of contents (state → Supabase sync → vendors → warehouses → orders → quotes → upload/parsing → PDF-image via Claude API → search/catalog → cart & optimizer → settings/export/import → privacy blur → theme → view switching → init).
